@@ -73,6 +73,7 @@
 #include "ProjectRenderer.h"
 #include "DataFile.h"
 #include "Song.h"
+#include "Messenger.h"
 
 static inline QString baseName( const QString & _file )
 {
@@ -92,10 +93,23 @@ inline void loadTranslation( const QString & _tname,
 	QCoreApplication::instance()->installTranslator( t );
 }
 
+void messageLogger(const Message &msg)
+{
+	FILE *fileno = msg.isError() ? stderr : stdout;
+	fprintf(fileno, "[%s] %s\n", msg.getTypeAsString().toLocal8Bit().constData(), msg.getMessage().toLocal8Bit().constData());
+}
+
 
 
 int main( int argc, char * * argv )
 {
+	// initialize loggers
+	MessageReceiverHandle debugHandler    = Messenger::subscribe(messageLogger, Message::DEBUG);
+	MessageReceiverHandle infoHandler     = Messenger::subscribe(messageLogger, Message::INFO);
+	MessageReceiverHandle warnHandler     = Messenger::subscribe(messageLogger, Message::WARN);
+	MessageReceiverHandle fatalHandler    = Messenger::subscribe(messageLogger, Message::NONFATAL);
+	MessageReceiverHandle nonfatalHandler = Messenger::subscribe(messageLogger, Message::FATAL);
+
 	// initialize memory managers
 	MemoryManager::init();
 	NotePlayHandleManager::init();
