@@ -416,7 +416,8 @@ protected:
 
 protected slots:
 	void saveSettingsBtnClicked();
-
+	void viewNextInstrument();
+	void viewPrevInstrument();
 
 private:
 	virtual void modelChanged();
@@ -426,6 +427,8 @@ private:
 
 	// widgets on the top of an instrument-track-window
 	QLineEdit * m_nameLineEdit;
+	PixmapButton * m_rolLInstrumentButton;
+	PixmapButton * m_rolRInstrumentButton;
 	Knob * m_volumeKnob;
 	Knob * m_panningKnob;
 	Knob * m_pitchKnob;

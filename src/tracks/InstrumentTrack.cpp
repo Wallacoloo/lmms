@@ -79,6 +79,7 @@
 #include "StringPairDrag.h"
 #include "TabWidget.h"
 #include "ToolTip.h"
+#include "TrackContainerView.h"
 #include "TrackLabelButton.h"
 #include "ValueBuffer.h"
 #include "volume.h"
@@ -1276,6 +1277,10 @@ InstrumentTrackWindow::InstrumentTrackWindow( InstrumentTrackView * _itv ) :
 
 	QVBoxLayout* generalSettingsLayout = new QVBoxLayout( generalSettingsWidget );
 
+	QWidget* nameAndChangeTrackWidget = new QWidget( generalSettingsWidget );
+
+	QHBoxLayout* nameAndChangeTrackLayout = new QHBoxLayout( nameAndChangeTrackWidget );
+
 	generalSettingsLayout->setContentsMargins( 8, 18, 8, 8 );
 	generalSettingsLayout->setSpacing( 6 );
 
@@ -1285,7 +1290,51 @@ InstrumentTrackWindow::InstrumentTrackWindow( InstrumentTrackView * _itv ) :
 	connect( m_nameLineEdit, SIGNAL( textChanged( const QString & ) ),
 				this, SLOT( textChanged( const QString & ) ) );
 
-	generalSettingsLayout->addWidget( m_nameLineEdit );
+	nameAndChangeTrackLayout->addWidget(m_nameLineEdit);
+
+	// set up left/right arrows for changing instrument
+	m_rolLInstrumentButton = new PixmapButton( this, "" );
+	m_rolLInstrumentButton->setCheckable( false );
+	m_rolLInstrumentButton->setCursor( Qt::PointingHandCursor );
+	//m_rolLInstrumentButton->move( 190, 201 );
+	m_rolLInstrumentButton->setActiveGraphic( embed::getIconPixmap(
+							"stepper-left-press" ) );
+	m_rolLInstrumentButton->setInactiveGraphic( embed::getIconPixmap(
+							"stepper-left" ) );
+	connect( m_rolLInstrumentButton, SIGNAL( clicked() ), this,
+						SLOT( viewPrevInstrument() ) );
+	ToolTip::add( m_rolLInstrumentButton, tr( "Previous (-)" ) );
+
+	m_rolLInstrumentButton->setShortcut( Qt::Key_Minus);
+
+	m_rolLInstrumentButton->setWhatsThis(
+		tr( "Click here, if you want to view/edit another instrument." ) );
+
+	nameAndChangeTrackLayout->addWidget(m_rolLInstrumentButton);
+
+	m_rolRInstrumentButton = new PixmapButton( this, "" );
+	m_rolRInstrumentButton->setCheckable( false );
+	m_rolRInstrumentButton->setCursor( Qt::PointingHandCursor );
+	//m_rolRInstrumentButton->move( 209, 201 );
+	m_rolRInstrumentButton->setActiveGraphic( embed::getIconPixmap(
+							"stepper-right-press" ) );
+	m_rolRInstrumentButton->setInactiveGraphic( embed::getIconPixmap(
+							"stepper-right" ) );
+	connect( m_rolRInstrumentButton, SIGNAL( clicked() ), this,
+						SLOT( viewNextInstrument() ) );
+	ToolTip::add( m_rolRInstrumentButton, tr( "Next (+)" ) );
+
+	m_rolRInstrumentButton->setShortcut( Qt::Key_Plus );
+
+	m_rolRInstrumentButton->setWhatsThis(
+		tr( "Click here, if you want to vied/edit another instrument." ) );
+
+	nameAndChangeTrackLayout->addWidget(m_rolRInstrumentButton);
+
+
+	generalSettingsLayout->addWidget( nameAndChangeTrackWidget );
+
+
 
 	QHBoxLayout* basicControlsLayout = new QHBoxLayout;
 	basicControlsLayout->setSpacing( 3 );
@@ -1691,4 +1740,57 @@ void InstrumentTrackWindow::loadSettings( const QDomElement& thisElement )
 	{
 		m_itv->m_tlb->setChecked( true );
 	}
+}
+
+void InstrumentTrackWindow::viewNextInstrument()
+{
+	// Song->m_trackViews is a QList<TrackView*> that's inherited from TrackContainerView
+	// Also has public method: trackViewAt(int _y)
+	// turns out that _y is a PIXEL coordinate
+
+	// there is also TrackView->trackContainer()->tracks() which returns a QVector of Track*
+	//   But Track has no access to TrackView
+	// TrackView->trackContainerView()->trackViews() [was previously protected]
+	// InstrumentTrackView (accessible via m_itv) inherits TrackView
+
+	// SongEditor contains an Song *m_song
+	const QList<TrackView *> &trackViews = m_itv->trackContainerView()->trackViews();
+	int idxOfMe = trackViews.indexOf(m_itv);
+
+	int idxOfNext = idxOfMe;
+	InstrumentTrackView *newView = nullptr;
+	do
+	{
+		idxOfNext = (idxOfNext+1) == trackViews.size() ? 0 : idxOfNext+1;
+	} while ((newView = dynamic_cast<InstrumentTrackView*>(trackViews[idxOfNext])) == nullptr);
+
+	QPoint curPos = parentWidget()->pos();
+	m_itv->m_tlb->setChecked(false);
+	
+	newView->m_tlb->setChecked(true);
+	newView->getInstrumentTrackWindow()->parentWidget()->move(curPos);
+
+	// setInstrumentTrackView(dynamic_cast<InstrumentTrackView*>(trackViews[idxOfNext]));
+	// m_track = m_itv->model();
+	//m_itv = dynamic_cast<InstrumentTrackView*>(trackViews[idxOfNext]);
+	//m_track = trackViews[idxOfNext]->castModel<InstrumentTrack>();
+	// updateInstrumentView();
+}
+void InstrumentTrackWindow::viewPrevInstrument()
+{
+	const QList<TrackView *> &trackViews = m_itv->trackContainerView()->trackViews();
+	int idxOfMe = trackViews.indexOf(m_itv);
+
+	int idxOfNext = idxOfMe;
+	InstrumentTrackView *newView = nullptr;
+	do
+	{
+		idxOfNext = idxOfNext == 0 ? trackViews.size()-1 : idxOfNext-1;
+	} while ((newView = dynamic_cast<InstrumentTrackView*>(trackViews[idxOfNext])) == nullptr);
+
+	QPoint curPos = parentWidget()->pos();
+	m_itv->m_tlb->setChecked(false);
+	
+	newView->m_tlb->setChecked(true);
+	newView->getInstrumentTrackWindow()->parentWidget()->move(curPos);
 }
