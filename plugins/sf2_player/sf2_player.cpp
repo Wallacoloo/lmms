@@ -118,9 +118,6 @@ sf2Instrument::sf2Instrument( InstrumentTrack * _instrument_track ) :
 	// everytime we load a new soundfont.
 	m_synth = new_fluid_synth( m_settings );
 
-	InstrumentPlayHandle * iph = new InstrumentPlayHandle( this, _instrument_track );
-	Engine::mixer()->addPlayHandle( iph );
-
 	loadFile( ConfigManager::inst()->defaultSoundfont() );
 
 	updateSampleRate();
@@ -152,6 +149,8 @@ sf2Instrument::sf2Instrument( InstrumentTrack * _instrument_track ) :
 	connect( &m_chorusSpeed, SIGNAL( dataChanged() ), this, SLOT( updateChorus() ) );
 	connect( &m_chorusDepth, SIGNAL( dataChanged() ), this, SLOT( updateChorus() ) );
 
+	InstrumentPlayHandle * iph = new InstrumentPlayHandle( this, _instrument_track );
+	Engine::mixer()->addPlayHandle( iph );
 }
 
 
@@ -1068,7 +1067,7 @@ void sf2InstrumentView::showFileDialog()
 		QString f = k->m_filename;
 		if( QFileInfo( f ).isRelative() )
 		{
-			f = ConfigManager::inst()->userSamplesDir() + f;
+			f = ConfigManager::inst()->sf2Dir() + f;
 			if( QFileInfo( f ).exists() == false )
 			{
 				f = ConfigManager::inst()->factorySamplesDir() + k->m_filename;
@@ -1079,7 +1078,7 @@ void sf2InstrumentView::showFileDialog()
 	}
 	else
 	{
-		ofd.setDirectory( ConfigManager::inst()->userSamplesDir() );
+		ofd.setDirectory( ConfigManager::inst()->sf2Dir() );
 	}
 
 	m_fileDialogButton->setEnabled( false );
