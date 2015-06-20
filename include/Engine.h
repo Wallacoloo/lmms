@@ -42,7 +42,7 @@ class Song;
 class Ladspa2LMMS;
 
 
-class EXPORT Engine : public QObject
+class EXPORT LmmsCore : public QObject
 {
 	Q_OBJECT
 public:
@@ -91,11 +91,11 @@ public:
 	}
 	static void updateFramesPerTick();
 
-	static inline Engine * inst()
+	static inline LmmsCore * inst()
 	{
 		if( s_instanceOfMe == NULL )
 		{
-			s_instanceOfMe = new Engine();
+			s_instanceOfMe = new LmmsCore();
 		}
 		return s_instanceOfMe;
 	}
@@ -128,12 +128,14 @@ private:
 	static Ladspa2LMMS * s_ladspaManager;
 
 	// even though most methods are static, an instance is needed for Qt slots/signals
-	static Engine * s_instanceOfMe;
+	static LmmsCore * s_instanceOfMe;
 
 	friend class GuiApplication;
 };
 
 
-
+// define the class as "LmmsCore" to avoid symbol name clashes with ZynAddSubFx's Engine class,
+// but typedef to Engine so that the rest of Lmms can pretend the name clash doesn't exist.
+typedef LmmsCore Engine;
 
 #endif
