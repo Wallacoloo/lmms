@@ -99,10 +99,6 @@ inline float typeInfo<float>::minEps()
 template<>
 inline bool typeInfo<float>::isEqual( float x, float y )
 {
-	if( x == y )
-	{
-		return true;
-	}
 	return absVal( x - y ) < minEps();
 }
 
