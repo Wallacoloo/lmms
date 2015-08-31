@@ -31,13 +31,13 @@
 
 #include <cstring>
 
+#include <QMap>
 #include <QReadWriteLock>
 #include <QSet>
 
+#include <lo/lo.h>
+
 class QString;
-
-class OscMsgListener;
-
 
 class Messenger
 {
@@ -77,21 +77,21 @@ public:
 	// @msg is the full message
 	void broadcastError(const QString &brief, const QString &msg);
 
-	// add a function to listen for OSC messages directed to a gui
-	// NOTE: This handler should have hard timing guarantees
-	//   preferrably, it will just enqueue the message and then process it later *in a separate thread*
-	void addGuiOscListener(OscMsgListener *listener);
+	// make it so any messages destined for the given @endpoint will be sent
+	// to the host at @address
+	// note: This transfers the ownership of address to Messenger - 
+	// do not manually delete it
+	void addListener(const QString &endpoint, lo_address address);
 private:
-	// dispatch an OSC formatted message to ALL attached listeners
-	// if length is 0, an error will be logged and no action taken
-	// Therefore this can be safely used like so:
-	// char buffer[512];
-	// broadcast(buffer, rtosc_message(buffer, 512, "/test", "s", "Test broadcast"))
-	void broadcast(const char *buffer, std::size_t length);
+	// dispatch an OSC formatted message to all addresses listening to the
+	// given endpoint
+	void broadcast(const char *endpoint, lo_message msg);
+	// broadcast an empty message
+	void broadcast(const char *endpoint);
 
-	// list of handlers that are called whenever we wish to broadcast a message to all GUIs
-	QSet<OscMsgListener*> m_guiListeners;
-	QReadWriteLock m_guiListenersLock;
+	// map of endpoint path -> list of hosts interested in that type of message
+	QMap<QString, QSet<lo_address> > m_listeners;
+	QReadWriteLock m_listenersLock;
 };
 
 #endif

@@ -31,7 +31,7 @@
 #include <QMessageBox>
 #include <QSplashScreen>
 
-#include "rtosc/rtosc.h"
+#include <lo/lo_cpp.h>
 
 #include "lmmsversion.h"
 
@@ -46,6 +46,7 @@
 #include "ImportFilter.h"
 #include "InstrumentTrack.h"
 #include "MainWindow.h"
+#include "Messenger.h"
 #include "PianoRoll.h"
 #include "ProjectNotes.h"
 #include "SongEditor.h"
@@ -77,7 +78,8 @@ GuiApplication::GuiApplication(const QString &fileToLoad, const QString &fileToI
 	m_fileToLoad(fileToLoad),
 	m_fileToImport(fileToImport),
 	m_fullscreen(fullscreen),
-	m_exitAfterImport(exitAfterImport)
+	m_exitAfterImport(exitAfterImport),
+	m_oscListener(NULL)
 {
 	// prompt the user to create the LMMS working directory (e.g. ~/lmms) if it doesn't exist
 	if ( !ConfigManager::inst()->hasWorkingDir() &&
@@ -90,13 +92,96 @@ GuiApplication::GuiApplication(const QString &fileToLoad, const QString &fileToI
 	{
 		ConfigManager::inst()->createWorkingDir();
 	}
-	// Add ourselves as a listener for Open Sound Control messages.
-	// handle all Open Sound Control messages in the main gui thread
-	connect(this, SIGNAL(receivedOscMessage(QByteArray)), this, 
-		SLOT(processOscMsgInGuiThread(QByteArray)), Qt::QueuedConnection);
+
+	// create the OSC server
+	lo_server tempServ = lo_server_new(NULL, NULL);
+	std::string portStdStr = QString::number(lo_server_get_port(tempServ)).toStdString();
+	lo_server_free(tempServ);
+	const char *port = portStdStr.c_str();
+	m_oscListener = new lo::ServerThread(port);
+
+
+	// in order to establish a queued connection to a function taking a nontrivial type,
+	// we must declare the type
+	qRegisterMetaType<QVector<float> >("QVector<float>");
+
+	// configure all the OSC endpoint mappings
+	m_oscListener->add_method(Messenger::Endpoints::Warning, "ss", 
+		[this](lo_arg **args, int numArgs)
+		{
+			QMetaObject::invokeMethod(this, "onOscRecvWarning",
+				Qt::QueuedConnection,
+				Q_ARG(QString, QString::fromUtf8(&args[0]->s)),
+				Q_ARG(QString, QString::fromUtf8(&args[1]->s)));
+		});
+	m_oscListener->add_method(Messenger::Endpoints::Error, "ss", 
+		[this](lo_arg **args, int numArgs)
+		{
+			QMetaObject::invokeMethod(this, "onOscRecvError",
+				Qt::QueuedConnection,
+				Q_ARG(QString, QString::fromUtf8(&args[0]->s)),
+				Q_ARG(QString, QString::fromUtf8(&args[1]->s)));
+		});
+	m_oscListener->add_method(Messenger::Endpoints::WaveTableInit, "", 
+		[this]()
+		{
+			QMetaObject::invokeMethod(this, "displayInitProgress",
+				Qt::QueuedConnection,
+				Q_ARG(QString, tr("Generated wavetables") ));
+		});
+	m_oscListener->add_method(Messenger::Endpoints::MixerDevInit, "", 
+		[this]()
+		{
+			QMetaObject::invokeMethod(this, "displayInitProgress",
+				Qt::QueuedConnection,
+				Q_ARG(QString, tr("Opened audio & midi devices") ));
+		});
+	m_oscListener->add_method(Messenger::Endpoints::MixerProcessingStart, "", 
+		[this]()
+		{
+			QMetaObject::invokeMethod(this, "displayInitProgress",
+				Qt::QueuedConnection,
+				Q_ARG(QString, tr("Started mixer threads") ));
+		});
+	m_oscListener->add_method(Messenger::Endpoints::FxMixerPeaks, NULL, 
+		[this](const char *types, lo_arg ** args, int numArgs)
+		{
+			if (numArgs % 2 != 0)
+			{
+				// Peak data must be paired
+				qDebug() << "GuiApplication: Invalid mixer peak data";
+				return;
+			}
+			// must manually validate the argument types
+			for (int i=0; i<numArgs; ++i)
+			{
+				if (types[i] != 'f')
+				{
+					qDebug() << "GuiApplication: Invalid mixer peak data";
+					return;
+				}
+			}
+			QVector<float> peaks;
+			peaks.reserve(numArgs);
+			for (int i=0; i<numArgs; ++i)
+			{
+				peaks.append(args[i]->f);
+			}
+			QMetaObject::invokeMethod(this, "updateMixerPeaks",
+				Qt::QueuedConnection,
+				Q_ARG(QVector<float>, peaks ));
+		});
+	m_oscListener->start();
+
 	// Add ourselves as a listener for OSC messages coming from the Engine
-	Engine::messenger()->addGuiOscListener(this);
-	this->listenInNewThread();
+	Messenger *messenger(Engine::messenger());
+	messenger->addListener(Messenger::Endpoints::Warning, lo_address_new("localhost", port));
+	messenger->addListener(Messenger::Endpoints::Error, lo_address_new("localhost", port));
+	messenger->addListener(Messenger::Endpoints::WaveTableInit, lo_address_new("localhost", port));
+	messenger->addListener(Messenger::Endpoints::MixerDevInit, lo_address_new("localhost", port));
+	messenger->addListener(Messenger::Endpoints::MixerProcessingStart, lo_address_new("localhost", port));
+	messenger->addListener(Messenger::Endpoints::FxMixerPeaks, lo_address_new("localhost", port));
+
 
 	// Init style and palette
 	LmmsStyle* lmmsstyle = new LmmsStyle();
@@ -158,18 +243,16 @@ void GuiApplication::initEngine()
 
 void GuiApplication::initMainWindow()
 {
-	displayInitProgress(tr("Preparing UI"));
+	//displayInitProgress(tr("Preparing UI"));
 	m_mainWindow = new MainWindow;
 	connect(m_mainWindow, SIGNAL(destroyed(QObject*)), this, SLOT(childDestroyed(QObject*)));
-	connect(m_mainWindow, SIGNAL(initProgress(const QString&)), 
-		this, SLOT(displayInitProgress(const QString&)));
 
 	emit postInitMainWindow();
 }
 
 void GuiApplication::initSongEditorWindow()
 {
-	displayInitProgress(tr("Preparing song editor"));
+	//displayInitProgress(tr("Preparing song editor"));
 	m_songEditor = new SongEditorWindow(Engine::getSong());
 	connect(m_songEditor, SIGNAL(destroyed(QObject*)), this, SLOT(childDestroyed(QObject*)));
 
@@ -178,7 +261,7 @@ void GuiApplication::initSongEditorWindow()
 
 void GuiApplication::initFxMixerView()
 {
-	displayInitProgress(tr("Preparing mixer"));
+	//displayInitProgress(tr("Preparing mixer"));
 	m_fxMixerView = new FxMixerView;
 	connect(m_fxMixerView, SIGNAL(destroyed(QObject*)), this, SLOT(childDestroyed(QObject*)));
 
@@ -187,7 +270,7 @@ void GuiApplication::initFxMixerView()
 
 void GuiApplication::initControllerRackView()
 {
-	displayInitProgress(tr("Preparing controller rack"));
+	//displayInitProgress(tr("Preparing controller rack"));
 	m_controllerRackView = new ControllerRackView;
 	connect(m_controllerRackView, SIGNAL(destroyed(QObject*)), this, SLOT(childDestroyed(QObject*)));
 
@@ -196,7 +279,7 @@ void GuiApplication::initControllerRackView()
 
 void GuiApplication::initProjectNotes()
 {
-	displayInitProgress(tr("Preparing project notes"));
+	//displayInitProgress(tr("Preparing project notes"));
 	m_projectNotes = new ProjectNotes;
 	connect(m_projectNotes, SIGNAL(destroyed(QObject*)), this, SLOT(childDestroyed(QObject*)));
 
@@ -205,7 +288,7 @@ void GuiApplication::initProjectNotes()
 
 void GuiApplication::initBbEditor()
 {
-	displayInitProgress(tr("Preparing beat/bassline editor"));
+	//displayInitProgress(tr("Preparing beat/bassline editor"));
 	m_bbEditor = new BBEditor(Engine::getBBTrackContainer());
 	connect(m_bbEditor, SIGNAL(destroyed(QObject*)), this, SLOT(childDestroyed(QObject*)));
 
@@ -214,7 +297,7 @@ void GuiApplication::initBbEditor()
 
 void GuiApplication::initPianoRoll()
 {
-	displayInitProgress(tr("Preparing piano roll"));
+	//displayInitProgress(tr("Preparing piano roll"));
 	m_pianoRoll = new PianoRollWindow();
 	connect(m_pianoRoll, SIGNAL(destroyed(QObject*)), this, SLOT(childDestroyed(QObject*)));
 
@@ -223,7 +306,7 @@ void GuiApplication::initPianoRoll()
 
 void GuiApplication::initAutomationEditor()
 {
-	displayInitProgress(tr("Preparing automation editor"));
+	//displayInitProgress(tr("Preparing automation editor"));
 	m_automationEditor = new AutomationEditorWindow;
 	connect(m_automationEditor, SIGNAL(destroyed(QObject*)), this, SLOT(childDestroyed(QObject*)));
 
@@ -304,7 +387,7 @@ GuiApplication::~GuiApplication()
 }
 
 
-void GuiApplication::displayInitProgress(const QString &msg)
+void GuiApplication::displayInitProgress(QString msg)
 {
 	if (m_loadingProgressLabel != nullptr)
 	{
@@ -353,7 +436,27 @@ void GuiApplication::childDestroyed(QObject *obj)
 	}
 }
 
-void GuiApplication::processMessage(const QByteArray &msg)
+void GuiApplication::onOscRecvWarning(QString brief, QString msg)
+{
+	QMessageBox::warning( NULL, 
+		brief.isEmpty() ? MainWindow::tr( "Warning" ) : brief, msg);
+}
+
+void GuiApplication::onOscRecvError(QString brief, QString msg)
+{
+	QMessageBox::critical( NULL, 
+		brief.isEmpty() ? MainWindow::tr( "Error" ) : brief, msg);
+}
+
+void GuiApplication::updateMixerPeaks(QVector<float> peaks)
+{
+	if (fxMixerView())
+	{
+		fxMixerView()->gotChannelPeaks(peaks.size()/2, peaks.data());
+	}
+}
+
+/*void GuiApplication::processMessage(const QByteArray &msg)
 {
 	emit receivedOscMessage(msg);
 }
@@ -366,9 +469,9 @@ static bool checkOscArgs(const char *fmt, const QByteArray &msg)
 		qDebug() << "GuiApplication: Bad OSC command";
 	}
 	return success;
-}
+}*/
 
-void GuiApplication::processOscMsgInGuiThread(QByteArray msg)
+/*void GuiApplication::processOscMsgInGuiThread(QByteArray msg)
 {
 	const char *data = msg.data();
 	if (strcmp(Messenger::Endpoints::WaveTableInit, data) == 0)
@@ -440,4 +543,4 @@ void GuiApplication::processOscMsgInGuiThread(QByteArray msg)
 	{
 		qDebug() << "GuiApplication::processMessage: Bad OSC path";
 	}
-}
+}*/
