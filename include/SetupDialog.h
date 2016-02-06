@@ -44,6 +44,7 @@ class QSlider;
 
 class TabBar;
 
+class ConfigVar;
 
 class SetupDialog : public QDialog
 {
@@ -93,13 +94,6 @@ private slots:
 	void displayMIDIHelp();
 
 
-	void toggleToolTips( bool _enabled );
-	void toggleWarnAfterSetup( bool _enabled );
-	void toggleDisplaydBV( bool _enabled );
-	void toggleMMPZ( bool _enabled );
-	void toggleDisableBackup( bool _enabled );
-	void toggleOpenLastProject( bool _enabled );
-	void toggleHQAudioDev( bool _enabled );
 
 	void openWorkingDir();
 	void openVSTDir();
@@ -114,13 +108,7 @@ private slots:
 
 	void toggleSmoothScroll( bool _enabled );
 	void toggleAutoSave( bool _enabled );
-	void toggleOneInstrumentTrackWindow( bool _enabled );
-	void toggleCompactTrackButtons( bool _enabled );
-	void toggleSyncVSTPlugins( bool _enabled );
 	void toggleAnimateAFP( bool _enabled );
-	void toggleNoteLabels( bool en );
-	void toggleDisplayWaveform( bool en );
-	void toggleDisableAutoquit( bool en );
 
 	void setLanguage( int lang );
 
@@ -132,13 +120,9 @@ private:
 	QLabel * m_bufSizeLbl;
 	int m_bufferSize;
 
-	bool m_toolTips;
-	bool m_warnAfterSetup;
-	bool m_displaydBV;
-	bool m_MMPZ;
-	bool m_disableBackup;
-	bool m_openLastProject;
-	bool m_hqAudioDev;
+	// all configurations variables that are to be shown under the 'misc' tab
+	QVector<ConfigVar*> m_miscVars;
+
 	QString m_lang;
 	QStringList m_languages;
 
@@ -175,13 +159,7 @@ private:
 
 	bool m_smoothScroll;
 	bool m_enableAutoSave;
-	bool m_oneInstrumentTrackWindow;
-	bool m_compactTrackButtons;
-	bool m_syncVSTPlugins;
 	bool m_animateAFP;
-	bool m_printNoteLabels;
-	bool m_displayWaveform;
-	bool m_disableAutoQuit;
 
 	typedef QMap<QString, AudioDeviceSetupWidget *> AswMap;
 	typedef QMap<QString, MidiSetupWidget *> MswMap;
@@ -197,6 +175,26 @@ private:
 
 
 } ;
+
+class ConfigVar : public QObject
+{
+	Q_OBJECT
+	public:
+		ConfigVar(QString section, QString name, QString uiName, bool inverted=false, QObject *parent=NULL);
+		QWidget* getWidget(QWidget *parent=NULL) const;
+		void writeToConfig() const;
+	private slots:
+		void onToggle(bool newValue);
+	private:
+		// section/name used to identify the variable in the configuration file
+		QString m_section, m_name;
+		QString m_uiName;
+		// m_inverted is true if the option is stored in the text file in the
+		// *opposite* way in which it's displayed.
+		// i.e. true when *unchecked*, false when checked.
+		bool m_inverted;
+		bool m_value;
+};
 
 
 #endif

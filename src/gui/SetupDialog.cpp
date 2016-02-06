@@ -69,6 +69,35 @@
 #include "MidiDummy.h"
 
 
+ConfigVar::ConfigVar(QString section, QString name, QString uiName, bool inverted, QObject *parent)
+: QObject(parent),
+  m_section(section),
+  m_name(name),
+  m_uiName(uiName),
+  m_inverted(inverted)
+{
+	// read the current value from the configuration file
+	m_value = (ConfigManager::inst()->value(section, name).toInt()
+				!= inverted);
+}
+QWidget* ConfigVar::getWidget(QWidget *parent) const
+{
+	LedCheckBox *box = new LedCheckBox(m_uiName, parent);
+	box->setChecked(m_value);
+	connect( box, SIGNAL( toggled(bool) ), this, SLOT( onToggle(bool) ) );
+	return box;
+}
+void ConfigVar::writeToConfig() const
+{
+	ConfigManager::inst()->setValue( m_section, m_name,
+			QString::number( m_value != m_inverted ) );
+}
+void ConfigVar::onToggle(bool newValue)
+{
+	// called whenever the user edits this value through the UI
+	m_value = newValue;
+}
+
 
 inline void labelWidget( QWidget * _w, const QString & _txt )
 {
@@ -91,19 +120,6 @@ inline void labelWidget( QWidget * _w, const QString & _txt )
 SetupDialog::SetupDialog( ConfigTabs _tab_to_open ) :
 	m_bufferSize( ConfigManager::inst()->value( "mixer",
 					"framesperaudiobuffer" ).toInt() ),
-	m_toolTips( !ConfigManager::inst()->value( "tooltips",
-							"disabled" ).toInt() ),
-	m_warnAfterSetup( !ConfigManager::inst()->value( "app",
-						"nomsgaftersetup" ).toInt() ),
-	m_displaydBV( ConfigManager::inst()->value( "app", 
-		      				"displaydbv" ).toInt() ),
-	m_MMPZ( !ConfigManager::inst()->value( "app", "nommpz" ).toInt() ),
-	m_disableBackup( !ConfigManager::inst()->value( "app",
-							"disablebackup" ).toInt() ),
-	m_openLastProject( ConfigManager::inst()->value( "app",
-							"openlastproject" ).toInt() ),
-	m_hqAudioDev( ConfigManager::inst()->value( "mixer",
-							"hqaudio" ).toInt() ),
 	m_lang( ConfigManager::inst()->value( "app",
 							"language" ) ),
 	m_workingDir( QDir::toNativeSeparators( ConfigManager::inst()->workingDir() ) ),
@@ -122,20 +138,8 @@ SetupDialog::SetupDialog( ConfigTabs _tab_to_open ) :
 	m_backgroundArtwork( QDir::toNativeSeparators( ConfigManager::inst()->backgroundArtwork() ) ),
 	m_smoothScroll( ConfigManager::inst()->value( "ui", "smoothscroll" ).toInt() ),
 	m_enableAutoSave( ConfigManager::inst()->value( "ui", "enableautosave" ).toInt() ),
-	m_oneInstrumentTrackWindow( ConfigManager::inst()->value( "ui",
-					"oneinstrumenttrackwindow" ).toInt() ),
-	m_compactTrackButtons( ConfigManager::inst()->value( "ui",
-					"compacttrackbuttons" ).toInt() ),
-	m_syncVSTPlugins( ConfigManager::inst()->value( "ui",
-							"syncvstplugins" ).toInt() ),
 	m_animateAFP(ConfigManager::inst()->value( "ui",
-						   "animateafp").toInt() ),
-	m_printNoteLabels(ConfigManager::inst()->value( "ui",
-						   "printnotelabels").toInt() ),
-	m_displayWaveform(ConfigManager::inst()->value( "ui",
-						   "displaywaveform").toInt() ),
-	m_disableAutoQuit(ConfigManager::inst()->value( "ui",
-						   "disableautoquit").toInt() )
+						   "animateafp").toInt() )
 {
 	setWindowIcon( embed::getIconPixmap( "setup_general" ) );
 	setWindowTitle( tr( "Setup LMMS" ) );
@@ -203,6 +207,20 @@ SetupDialog::SetupDialog( ConfigTabs _tab_to_open ) :
 	connect( bufsize_help_btn, SIGNAL( clicked() ), this,
 						SLOT( displayBufSizeHelp() ) );
 
+	// declare all the miscellaneous config vars:
+	m_miscVars.push_back(new ConfigVar("tooltips", "disabled", tr( "Enable tooltips" ), true, this));
+	m_miscVars.push_back(new ConfigVar("app", "nomsgaftersetup", tr( "Show restart warning after changing settings" ), true, this));
+	m_miscVars.push_back(new ConfigVar("app", "displaydbv", tr( "Display volume as dBV " ), false, this));
+	m_miscVars.push_back(new ConfigVar("app", "nommpz", tr( "Compress project files per default" ), true, this));
+	m_miscVars.push_back(new ConfigVar("ui", "oneinstrumenttrackwindow", tr( "One instrument track window mode" ), false, this));
+	m_miscVars.push_back(new ConfigVar("mixer", "hqaudio", tr( "HQ-mode for output audio-device" ), false, this));
+	m_miscVars.push_back(new ConfigVar("ui", "compacttrackbuttons", tr( "Compact track buttons" ), false, this));
+	m_miscVars.push_back(new ConfigVar("ui", "syncvstplugins", tr( "Sync VST plugins to host playback" ), false, this));
+	m_miscVars.push_back(new ConfigVar("ui", "printnotelabels", tr( "Enable note labels in piano roll" ), false, this));
+	m_miscVars.push_back(new ConfigVar("ui", "displaywaveform", tr( "Enable waveform display by default" ), false, this));
+	m_miscVars.push_back(new ConfigVar("ui", "disableautoquit", tr( "Keep effects running even without input" ), false, this));
+	m_miscVars.push_back(new ConfigVar("app", "disablebackup", tr( "Create backup file when saving a project" ), true, this));
+	m_miscVars.push_back(new ConfigVar("app", "openlastproject", tr( "Reopen last project on start" ), false, this));
 
 	TabWidget * misc_tw = new TabWidget( tr( "MISC" ), general );
 	const int XDelta = 10;
@@ -210,129 +228,18 @@ SetupDialog::SetupDialog( ConfigTabs _tab_to_open ) :
 	const int HeaderSize = 30;
 	int labelNumber = 0;
 
-
-	LedCheckBox * enable_tooltips = new LedCheckBox(
-							tr( "Enable tooltips" ),
-								misc_tw );
-	labelNumber++;
-	enable_tooltips->move( XDelta, YDelta*labelNumber );
-	enable_tooltips->setChecked( m_toolTips );
-	connect( enable_tooltips, SIGNAL( toggled( bool ) ),
-					this, SLOT( toggleToolTips( bool ) ) );
-
-
-	LedCheckBox * restart_msg = new LedCheckBox(
-			tr( "Show restart warning after changing settings" ),
-								misc_tw );
-	labelNumber++;
-	restart_msg->move( XDelta, YDelta*labelNumber );
-	restart_msg->setChecked( m_warnAfterSetup );
-	connect( restart_msg, SIGNAL( toggled( bool ) ),
-				this, SLOT( toggleWarnAfterSetup( bool ) ) );
-
-
-	LedCheckBox * dbv = new LedCheckBox( tr( "Display volume as dBV " ),
-								misc_tw );
-	labelNumber++;
-	dbv->move( XDelta, YDelta*labelNumber );
-	dbv->setChecked( m_displaydBV );
-	connect( dbv, SIGNAL( toggled( bool ) ),
-				this, SLOT( toggleDisplaydBV( bool ) ) );
-
-
-	LedCheckBox * mmpz = new LedCheckBox(
-				tr( "Compress project files per default" ),
-								misc_tw );
-	labelNumber++;
-	mmpz->move( XDelta, YDelta*labelNumber );
-	mmpz->setChecked( m_MMPZ );
-	connect( mmpz, SIGNAL( toggled( bool ) ),
-					this, SLOT( toggleMMPZ( bool ) ) );
-
-	LedCheckBox * oneitw = new LedCheckBox(
-				tr( "One instrument track window mode" ),
-								misc_tw );
-	labelNumber++;
-	oneitw->move( XDelta, YDelta*labelNumber );
-	oneitw->setChecked( m_oneInstrumentTrackWindow );
-	connect( oneitw, SIGNAL( toggled( bool ) ),
-				this, SLOT( toggleOneInstrumentTrackWindow( bool ) ) );
-
-	LedCheckBox * hqaudio = new LedCheckBox(
-				tr( "HQ-mode for output audio-device" ),
-								misc_tw );
-	labelNumber++;
-	hqaudio->move( XDelta, YDelta*labelNumber );
-	hqaudio->setChecked( m_hqAudioDev );
-	connect( hqaudio, SIGNAL( toggled( bool ) ),
-				this, SLOT( toggleHQAudioDev( bool ) ) );
-
-	LedCheckBox * compacttracks = new LedCheckBox(
-				tr( "Compact track buttons" ),
-								misc_tw );
-	labelNumber++;
-	compacttracks->move( XDelta, YDelta*labelNumber );
-	compacttracks->setChecked( m_compactTrackButtons );
-	connect( compacttracks, SIGNAL( toggled( bool ) ),
-				this, SLOT( toggleCompactTrackButtons( bool ) ) );
-
-
-	LedCheckBox * syncVST = new LedCheckBox(
-				tr( "Sync VST plugins to host playback" ),
-								misc_tw );
-	labelNumber++;
-	syncVST->move( XDelta, YDelta*labelNumber );
-	syncVST->setChecked( m_syncVSTPlugins );
-	connect( syncVST, SIGNAL( toggled( bool ) ),
-				this, SLOT( toggleSyncVSTPlugins( bool ) ) );
-
-	LedCheckBox * noteLabels = new LedCheckBox(
-				tr( "Enable note labels in piano roll" ),
-								misc_tw );
-	labelNumber++;
-	noteLabels->move( XDelta, YDelta*labelNumber );
-	noteLabels->setChecked( m_printNoteLabels );
-	connect( noteLabels, SIGNAL( toggled( bool ) ),
-				this, SLOT( toggleNoteLabels( bool ) ) );
-
-	LedCheckBox * displayWaveform = new LedCheckBox(
-				tr( "Enable waveform display by default" ),
-								misc_tw );
-	labelNumber++;
-	displayWaveform->move( XDelta, YDelta*labelNumber );
-	displayWaveform->setChecked( m_displayWaveform );
-	connect( displayWaveform, SIGNAL( toggled( bool ) ),
-				this, SLOT( toggleDisplayWaveform( bool ) ) );
-
-	LedCheckBox * disableAutoquit = new LedCheckBox(
-				tr( "Keep effects running even without input" ),
-								misc_tw );
-	labelNumber++;
-	disableAutoquit->move( XDelta, YDelta*labelNumber );
-	disableAutoquit->setChecked( m_disableAutoQuit );
-	connect( disableAutoquit, SIGNAL( toggled( bool ) ),
-				this, SLOT( toggleDisableAutoquit( bool ) ) );
-
-	LedCheckBox * disableBackup = new LedCheckBox(
-				tr( "Create backup file when saving a project" ),
-								misc_tw );
-	labelNumber++;
-	disableBackup->move( XDelta, YDelta*labelNumber );
-	disableBackup->setChecked( m_disableBackup );
-	connect( disableBackup, SIGNAL( toggled( bool ) ),
-				this, SLOT( toggleDisableBackup( bool ) ) );
-
-	LedCheckBox * openLastProject = new LedCheckBox(
-				tr( "Reopen last project on start" ),
-								misc_tw );
-	labelNumber++;
-	openLastProject->move( XDelta, YDelta*labelNumber );
-	openLastProject->setChecked( m_openLastProject );
-	connect( openLastProject, SIGNAL( toggled( bool ) ),
-				this, SLOT( toggleOpenLastProject( bool ) ) );
+	// add all misc config vars to the UI
+	for (ConfigVar *var : m_miscVars)
+	{
+		QWidget *widget = var->getWidget( misc_tw );
+		++labelNumber;
+		widget->move( XDelta, YDelta*labelNumber );
+	}
 
 	misc_tw->setFixedHeight( YDelta*labelNumber + HeaderSize );
 
+
+	// Create the language tab
 	TabWidget * lang_tw = new TabWidget( tr( "LANGUAGE" ), general );
 	lang_tw->setFixedHeight( 48 );
 	QComboBox * changeLang = new QComboBox( lang_tw );
@@ -962,44 +869,24 @@ SetupDialog::~SetupDialog()
 
 void SetupDialog::accept()
 {
+	// save all the misc config variables
+	for (const ConfigVar *var : m_miscVars)
+	{
+		var->writeToConfig();
+	}
+
 	ConfigManager::inst()->setValue( "mixer", "framesperaudiobuffer",
 					QString::number( m_bufferSize ) );
 	ConfigManager::inst()->setValue( "mixer", "audiodev",
 			m_audioIfaceNames[m_audioInterfaces->currentText()] );
 	ConfigManager::inst()->setValue( "mixer", "mididev",
 			m_midiIfaceNames[m_midiInterfaces->currentText()] );
-	ConfigManager::inst()->setValue( "tooltips", "disabled",
-					QString::number( !m_toolTips ) );
-	ConfigManager::inst()->setValue( "app", "nomsgaftersetup",
-					QString::number( !m_warnAfterSetup ) );
-	ConfigManager::inst()->setValue( "app", "displaydbv",
-					QString::number( m_displaydBV ) );
-	ConfigManager::inst()->setValue( "app", "nommpz",
-						QString::number( !m_MMPZ ) );
-	ConfigManager::inst()->setValue( "app", "disablebackup",
-					QString::number( !m_disableBackup ) );
-	ConfigManager::inst()->setValue( "app", "openlastproject",
-					QString::number( m_openLastProject ) );
-	ConfigManager::inst()->setValue( "mixer", "hqaudio",
-					QString::number( m_hqAudioDev ) );
 	ConfigManager::inst()->setValue( "ui", "smoothscroll",
 					QString::number( m_smoothScroll ) );
 	ConfigManager::inst()->setValue( "ui", "enableautosave",
 					QString::number( m_enableAutoSave ) );
-	ConfigManager::inst()->setValue( "ui", "oneinstrumenttrackwindow",
-					QString::number( m_oneInstrumentTrackWindow ) );
-	ConfigManager::inst()->setValue( "ui", "compacttrackbuttons",
-					QString::number( m_compactTrackButtons ) );
-	ConfigManager::inst()->setValue( "ui", "syncvstplugins",
-					QString::number( m_syncVSTPlugins ) );
 	ConfigManager::inst()->setValue( "ui", "animateafp",
 					QString::number( m_animateAFP ) );
-	ConfigManager::inst()->setValue( "ui", "printnotelabels",
-					QString::number( m_printNoteLabels ) );
-	ConfigManager::inst()->setValue( "ui", "displaywaveform",
-					QString::number( m_displayWaveform ) );
-	ConfigManager::inst()->setValue( "ui", "disableautoquit",
-					QString::number( m_disableAutoQuit ) );
 	ConfigManager::inst()->setValue( "app", "language", m_lang );
 
 
@@ -1034,7 +921,7 @@ void SetupDialog::accept()
 	ConfigManager::inst()->saveConfigFile();
 
 	QDialog::accept();
-	if( m_warnAfterSetup )
+	if( !ConfigManager::inst()->value("app", "nomsgaftersetup").toInt() )
 	{
 		QMessageBox::information( NULL, tr( "Restart LMMS" ),
 					tr( "Please note that most changes "
@@ -1101,64 +988,6 @@ void SetupDialog::displayBufSizeHelp()
 }
 
 
-
-
-void SetupDialog::toggleToolTips( bool _enabled )
-{
-	m_toolTips = _enabled;
-}
-
-
-
-
-void SetupDialog::toggleWarnAfterSetup( bool _enabled )
-{
-	m_warnAfterSetup = _enabled;
-}
-
-
-
-
-void SetupDialog::toggleDisplaydBV( bool _enabled )
-{
-	m_displaydBV = _enabled;
-}
-
-
-
-
-void SetupDialog::toggleMMPZ( bool _enabled )
-{
-	m_MMPZ = _enabled;
-}
-
-
-
-
-void SetupDialog::toggleDisableBackup( bool _enabled )
-{
-	m_disableBackup = _enabled;
-}
-
-
-
-
-void SetupDialog::toggleOpenLastProject( bool _enabled )
-{
-	m_openLastProject = _enabled;
-}
-
-
-
-
-void SetupDialog::toggleHQAudioDev( bool _enabled )
-{
-	m_hqAudioDev = _enabled;
-}
-
-
-
-
 void SetupDialog::toggleSmoothScroll( bool _enabled )
 {
 	m_smoothScroll = _enabled;
@@ -1173,51 +1002,11 @@ void SetupDialog::toggleAutoSave( bool _enabled )
 
 
 
-
-
-
-void SetupDialog::toggleCompactTrackButtons( bool _enabled )
-{
-	m_compactTrackButtons = _enabled;
-}
-
-
-
-
-
-void SetupDialog::toggleSyncVSTPlugins( bool _enabled )
-{
-	m_syncVSTPlugins = _enabled;
-}
-
 void SetupDialog::toggleAnimateAFP( bool _enabled )
 {
 	m_animateAFP = _enabled;
 }
 
-
-void SetupDialog::toggleNoteLabels( bool en )
-{
-	m_printNoteLabels = en;
-}
-
-
-void SetupDialog::toggleDisplayWaveform( bool en )
-{
-	m_displayWaveform = en;
-}
-
-
-void SetupDialog::toggleDisableAutoquit( bool en )
-{
-	m_disableAutoQuit = en;
-}
-
-
-void SetupDialog::toggleOneInstrumentTrackWindow( bool _enabled )
-{
-	m_oneInstrumentTrackWindow = _enabled;
-}
 
 void SetupDialog::setLanguage( int lang )
 {
