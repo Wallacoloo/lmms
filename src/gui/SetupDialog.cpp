@@ -69,30 +69,37 @@
 #include "MidiDummy.h"
 
 
-ConfigVar::ConfigVar(QString section, QString name, QString uiName, bool inverted, QObject *parent)
+ConfigVar::ConfigVar(QString section, QString name, QString uiName, QObject *parent)
 : QObject(parent),
   m_section(section),
   m_name(name),
-  m_uiName(uiName),
+  m_uiName(uiName)
+{
+}
+
+
+BoolConfigVar::BoolConfigVar(QString section, QString name, QString uiName, bool inverted, QObject *parent)
+: ConfigVar(section, name, uiName, parent),
   m_inverted(inverted)
 {
 	// read the current value from the configuration file
 	m_value = (ConfigManager::inst()->value(section, name).toInt()
 				!= inverted);
 }
-QWidget* ConfigVar::getWidget(QWidget *parent) const
+
+QWidget* BoolConfigVar::getWidget(QWidget *parent) const
 {
 	LedCheckBox *box = new LedCheckBox(m_uiName, parent);
 	box->setChecked(m_value);
 	connect( box, SIGNAL( toggled(bool) ), this, SLOT( onToggle(bool) ) );
 	return box;
 }
-void ConfigVar::writeToConfig() const
+void BoolConfigVar::writeToConfig() const
 {
 	ConfigManager::inst()->setValue( m_section, m_name,
 			QString::number( m_value != m_inverted ) );
 }
-void ConfigVar::onToggle(bool newValue)
+void BoolConfigVar::onToggle(bool newValue)
 {
 	// called whenever the user edits this value through the UI
 	m_value = newValue;
@@ -208,19 +215,19 @@ SetupDialog::SetupDialog( ConfigTabs _tab_to_open ) :
 						SLOT( displayBufSizeHelp() ) );
 
 	// declare all the miscellaneous config vars:
-	m_miscVars.push_back(new ConfigVar("tooltips", "disabled", tr( "Enable tooltips" ), true, this));
-	m_miscVars.push_back(new ConfigVar("app", "nomsgaftersetup", tr( "Show restart warning after changing settings" ), true, this));
-	m_miscVars.push_back(new ConfigVar("app", "displaydbv", tr( "Display volume as dBV " ), false, this));
-	m_miscVars.push_back(new ConfigVar("app", "nommpz", tr( "Compress project files per default" ), true, this));
-	m_miscVars.push_back(new ConfigVar("ui", "oneinstrumenttrackwindow", tr( "One instrument track window mode" ), false, this));
-	m_miscVars.push_back(new ConfigVar("mixer", "hqaudio", tr( "HQ-mode for output audio-device" ), false, this));
-	m_miscVars.push_back(new ConfigVar("ui", "compacttrackbuttons", tr( "Compact track buttons" ), false, this));
-	m_miscVars.push_back(new ConfigVar("ui", "syncvstplugins", tr( "Sync VST plugins to host playback" ), false, this));
-	m_miscVars.push_back(new ConfigVar("ui", "printnotelabels", tr( "Enable note labels in piano roll" ), false, this));
-	m_miscVars.push_back(new ConfigVar("ui", "displaywaveform", tr( "Enable waveform display by default" ), false, this));
-	m_miscVars.push_back(new ConfigVar("ui", "disableautoquit", tr( "Keep effects running even without input" ), false, this));
-	m_miscVars.push_back(new ConfigVar("app", "disablebackup", tr( "Create backup file when saving a project" ), true, this));
-	m_miscVars.push_back(new ConfigVar("app", "openlastproject", tr( "Reopen last project on start" ), false, this));
+	m_miscVars.push_back(new BoolConfigVar("tooltips", "disabled", tr( "Enable tooltips" ), true, this));
+	m_miscVars.push_back(new BoolConfigVar("app", "nomsgaftersetup", tr( "Show restart warning after changing settings" ), true, this));
+	m_miscVars.push_back(new BoolConfigVar("app", "displaydbv", tr( "Display volume as dBV " ), false, this));
+	m_miscVars.push_back(new BoolConfigVar("app", "nommpz", tr( "Compress project files per default" ), true, this));
+	m_miscVars.push_back(new BoolConfigVar("ui", "oneinstrumenttrackwindow", tr( "One instrument track window mode" ), false, this));
+	m_miscVars.push_back(new BoolConfigVar("mixer", "hqaudio", tr( "HQ-mode for output audio-device" ), false, this));
+	m_miscVars.push_back(new BoolConfigVar("ui", "compacttrackbuttons", tr( "Compact track buttons" ), false, this));
+	m_miscVars.push_back(new BoolConfigVar("ui", "syncvstplugins", tr( "Sync VST plugins to host playback" ), false, this));
+	m_miscVars.push_back(new BoolConfigVar("ui", "printnotelabels", tr( "Enable note labels in piano roll" ), false, this));
+	m_miscVars.push_back(new BoolConfigVar("ui", "displaywaveform", tr( "Enable waveform display by default" ), false, this));
+	m_miscVars.push_back(new BoolConfigVar("ui", "disableautoquit", tr( "Keep effects running even without input" ), false, this));
+	m_miscVars.push_back(new BoolConfigVar("app", "disablebackup", tr( "Create backup file when saving a project" ), true, this));
+	m_miscVars.push_back(new BoolConfigVar("app", "openlastproject", tr( "Reopen last project on start" ), false, this));
 
 	TabWidget * misc_tw = new TabWidget( tr( "MISC" ), general );
 	const int XDelta = 10;
@@ -852,8 +859,6 @@ SetupDialog::SetupDialog( ConfigTabs _tab_to_open ) :
 	vlayout->addStretch();
 
 	show();
-
-
 }
 
 

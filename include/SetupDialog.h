@@ -180,21 +180,30 @@ class ConfigVar : public QObject
 {
 	Q_OBJECT
 	public:
-		ConfigVar(QString section, QString name, QString uiName, bool inverted=false, QObject *parent=NULL);
+		ConfigVar(QString section, QString name, QString uiName, QObject *parent=NULL);
+		virtual QWidget* getWidget(QWidget *parent=NULL) const = 0;
+		virtual void writeToConfig() const = 0;
+	protected:
+		// section/name used to identify the variable in the configuration file
+		QString m_section, m_name;
+		QString m_uiName;
+};
+
+class BoolConfigVar : public ConfigVar
+{
+	Q_OBJECT
+	public:
+		BoolConfigVar(QString section, QString name, QString uiName, bool inverted=false, QObject *parent=NULL);
 		QWidget* getWidget(QWidget *parent=NULL) const;
 		void writeToConfig() const;
 	private slots:
 		void onToggle(bool newValue);
 	private:
 		// section/name used to identify the variable in the configuration file
-		QString m_section, m_name;
-		QString m_uiName;
 		// m_inverted is true if the option is stored in the text file in the
 		// *opposite* way in which it's displayed.
-		// i.e. true when *unchecked*, false when checked.
 		bool m_inverted;
 		bool m_value;
 };
-
 
 #endif
