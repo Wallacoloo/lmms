@@ -69,17 +69,34 @@
 #include "MidiDummy.h"
 
 
-ConfigVar::ConfigVar(QString section, QString name, QString uiName, QObject *parent)
+ConfigVar::ConfigVar(QString section, QString name, QString uiName, bool isOwnTab, QObject *parent)
 : QObject(parent),
   m_section(section),
   m_name(name),
-  m_uiName(uiName)
+  m_uiName(uiName),
+  m_isOwnTab(isOwnTab)
 {
+}
+
+QWidget* ConfigVar::getWidget(QWidget *parent) const
+{
+	if (m_isOwnTab)
+	{
+		TabWidget *tab = new TabWidget( m_uiName, parent );
+		// add the widget to the tab
+		implGetWidget(tab);
+		return tab;
+	}
+	else
+	{
+		// just return the normal widget
+		return implGetWidget(parent);
+	}
 }
 
 
 BoolConfigVar::BoolConfigVar(QString section, QString name, QString uiName, bool inverted, QObject *parent)
-: ConfigVar(section, name, uiName, parent),
+: ConfigVar(section, name, uiName, false, parent),
   m_inverted(inverted)
 {
 	// read the current value from the configuration file
@@ -87,7 +104,7 @@ BoolConfigVar::BoolConfigVar(QString section, QString name, QString uiName, bool
 				!= inverted);
 }
 
-QWidget* BoolConfigVar::getWidget(QWidget *parent) const
+QWidget* BoolConfigVar::implGetWidget(QWidget *parent) const
 {
 	LedCheckBox *box = new LedCheckBox(m_uiName, parent);
 	box->setChecked(m_value);
@@ -104,6 +121,78 @@ void BoolConfigVar::onToggle(bool newValue)
 	// called whenever the user edits this value through the UI
 	m_value = newValue;
 }
+
+
+
+
+
+PathConfigVar::PathConfigVar(QString section, QString name, QString uiName, QString dialogTitle, QObject *parent)
+: ConfigVar(section, name, uiName, true, parent),
+  m_dialogTitle(dialogTitle)
+{
+	// load path from config
+	m_path = QDir::toNativeSeparators(
+		ConfigManager::inst()->value( section, name ) );
+}
+
+QWidget* PathConfigVar::implGetWidget(QWidget *parent) const
+{
+	PathConfigWidget *widget = new PathConfigWidget(
+	m_path, m_dialogTitle, parent );
+	connect( widget, SIGNAL( onPathChanged( const QString& ) ),
+		this, SLOT( onPathChanged( const QString& ) ) );
+	return widget;
+}
+
+void PathConfigVar::onPathChanged( const QString &newPath )
+{
+	m_path = newPath;
+}
+
+void PathConfigVar::writeToConfig() const
+{
+	ConfigManager::inst()->setValue( m_section, m_name, m_path );
+}
+
+
+
+PathConfigWidget::PathConfigWidget(const QString &defaultPath, const QString &dialogTitle, QWidget *parent)
+: QWidget(parent),
+  m_dialogTitle(dialogTitle)
+{
+	const int txtLength = 284;
+	const int btnStart = 297;
+
+	m_lineEdit = new QLineEdit(defaultPath, this);
+	m_lineEdit->setGeometry( 10, 20, txtLength, 16);
+
+	QPushButton *selectBtn = new QPushButton(
+		embed::getIconPixmap( "project_open", 16, 16 ),
+		"", this );
+	selectBtn->setFixedSize( 24, 24 );
+	selectBtn->move( btnStart, 16 );
+
+	// monitor signals that indicate the value has changed:
+	connect( m_lineEdit, SIGNAL( textChanged( const QString & ) ), this,
+		SLOT( onLineEditChanged( const QString & ) ) );
+	connect( selectBtn, SIGNAL( clicked() ), this, SLOT( onOpenBtnClicked() ) );
+}
+
+void PathConfigWidget::onOpenBtnClicked()
+{
+	QString newPath = FileDialog::getExistingDirectory( this, m_dialogTitle, m_lineEdit->text() );
+	if( newPath != QString::null )
+	{
+		m_lineEdit->setText( newPath );
+		emit onPathChanged( newPath );
+	}
+}
+
+void PathConfigWidget::onLineEditChanged(const QString &newPath)
+{
+	emit onPathChanged( newPath );
+}
+
 
 
 inline void labelWidget( QWidget * _w, const QString & _txt )
@@ -329,25 +418,33 @@ SetupDialog::SetupDialog( ConfigTabs _tab_to_open ) :
 	const int txtLength = 284;
 	const int btnStart = 297;
 
+	m_pathVars.push_back(new PathConfigVar( "paths", "workingdir", tr( "LMMS working directory").toUpper(),
+		tr( "Choose LMMS working directory" ), this ));
+	m_pathVars.push_back(new PathConfigVar( "paths", "gigdir", tr( "GIG directory").toUpper(),
+		tr( "Choose your GIG directory" ), this ));
+	//m_pathVars.push_back(new PathConfigVar( "paths", "artwork", tr( "Themes directory").toUpper(),
+	//	tr( "Choose artwork-theme directory" ), this ));
+	//QWidget *lmms_wd_tw = lmms_wd_tw_config->getWidget( pathSelectors );
+	//lmms_wd_tw->setFixedHeight( 48 );
 
 	// working-dir
-	TabWidget * lmms_wd_tw = new TabWidget( tr(
-					"LMMS working directory" ).toUpper(),
-								pathSelectors );
-	lmms_wd_tw->setFixedHeight( 48 );
+	//TabWidget * lmms_wd_tw = new TabWidget( tr(
+	//				"LMMS working directory" ).toUpper(),
+	//							pathSelectors );
+	//lmms_wd_tw->setFixedHeight( 48 );
 
-	m_wdLineEdit = new QLineEdit( m_workingDir, lmms_wd_tw );
-	m_wdLineEdit->setGeometry( 10, 20, txtLength, 16 );
-	connect( m_wdLineEdit, SIGNAL( textChanged( const QString & ) ), this,
-				SLOT( setWorkingDir( const QString & ) ) );
+	//m_wdLineEdit = new QLineEdit( m_workingDir, lmms_wd_tw );
+	//m_wdLineEdit->setGeometry( 10, 20, txtLength, 16 );
+	//connect( m_wdLineEdit, SIGNAL( textChanged( const QString & ) ), this,
+	//			SLOT( setWorkingDir( const QString & ) ) );
 
-	QPushButton * workingdir_select_btn = new QPushButton(
-				embed::getIconPixmap( "project_open", 16, 16 ),
-							"", lmms_wd_tw );
-	workingdir_select_btn->setFixedSize( 24, 24 );
-	workingdir_select_btn->move( btnStart, 16 );
-	connect( workingdir_select_btn, SIGNAL( clicked() ), this,
-						SLOT( openWorkingDir() ) );
+	//QPushButton * workingdir_select_btn = new QPushButton(
+	//			embed::getIconPixmap( "project_open", 16, 16 ),
+	//						"", lmms_wd_tw );
+	//workingdir_select_btn->setFixedSize( 24, 24 );
+	//workingdir_select_btn->move( btnStart, 16 );
+	//connect( workingdir_select_btn, SIGNAL( clicked() ), this,
+	//					SLOT( openWorkingDir() ) );
 
 
 	// artwork-dir
@@ -433,23 +530,23 @@ SetupDialog::SetupDialog( ConfigTabs _tab_to_open ) :
 						SLOT( openVSTDir() ) );
 
 	// gig-dir
-	TabWidget * gig_tw = new TabWidget( tr(
-					"GIG directory" ).toUpper(),
-								pathSelectors );
-	gig_tw->setFixedHeight( 48 );
+	//TabWidget * gig_tw = new TabWidget( tr(
+	//				"GIG directory" ).toUpper(),
+	//							pathSelectors );
+	//gig_tw->setFixedHeight( 48 );
 
-	m_gigLineEdit = new QLineEdit( m_gigDir, gig_tw );
-	m_gigLineEdit->setGeometry( 10, 20, txtLength, 16 );
-	connect( m_gigLineEdit, SIGNAL( textChanged( const QString & ) ), this,
-					SLOT( setGIGDir( const QString & ) ) );
+	//m_gigLineEdit = new QLineEdit( m_gigDir, gig_tw );
+	//m_gigLineEdit->setGeometry( 10, 20, txtLength, 16 );
+	//connect( m_gigLineEdit, SIGNAL( textChanged( const QString & ) ), this,
+	//				SLOT( setGIGDir( const QString & ) ) );
 
-	QPushButton * gigdir_select_btn = new QPushButton(
-				embed::getIconPixmap( "project_open", 16, 16 ),
-								"", gig_tw );
-	gigdir_select_btn->setFixedSize( 24, 24 );
-	gigdir_select_btn->move( btnStart, 16 );
-	connect( gigdir_select_btn, SIGNAL( clicked() ), this,
-						SLOT( openGIGDir() ) );
+	//QPushButton * gigdir_select_btn = new QPushButton(
+	//			embed::getIconPixmap( "project_open", 16, 16 ),
+	//							"", gig_tw );
+	//gigdir_select_btn->setFixedSize( 24, 24 );
+	//gigdir_select_btn->move( btnStart, 16 );
+	//connect( gigdir_select_btn, SIGNAL( clicked() ), this,
+	//					SLOT( openGIGDir() ) );
 
 	// sf2-dir
 	TabWidget * sf2_tw = new TabWidget( tr(
@@ -535,10 +632,17 @@ SetupDialog::SetupDialog( ConfigTabs _tab_to_open ) :
 
 	pathSelectors->setLayout( pathSelectorLayout );
 
-	pathSelectorLayout->addWidget( lmms_wd_tw );
-	pathSelectorLayout->addSpacing( 10 );
-	pathSelectorLayout->addWidget( gig_tw );
-	pathSelectorLayout->addSpacing( 10 );
+	for (ConfigVar *var : m_pathVars)
+	{
+		QWidget *widget = var->getWidget( pathSelectors );
+		widget->setFixedHeight( 48 );
+		pathSelectorLayout->addWidget( widget );
+		pathSelectorLayout->addSpacing( 10 );
+	}
+	//pathSelectorLayout->addWidget( lmms_wd_tw );
+	//pathSelectorLayout->addSpacing( 10 );
+	//pathSelectorLayout->addWidget( gig_tw );
+	//pathSelectorLayout->addSpacing( 10 );
 	pathSelectorLayout->addWidget( sf2_tw );
 	pathSelectorLayout->addSpacing( 10 );
 	pathSelectorLayout->addWidget( vst_tw );
