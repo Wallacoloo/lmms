@@ -124,11 +124,26 @@ void BoolConfigVar::onToggle(bool newValue)
 
 
 
+PathConfigVar* PathConfigVar::newFileVar(QString section, QString name, QString uiName, QString dialogTitle, QString fileFilter, QObject *parent)
+{
+	return new PathConfigVar(section, name, uiName, dialogTitle, false, fileFilter, parent);
+}
+PathConfigVar* PathConfigVar::newDirVar(QString section, QString name, QString uiName, QString dialogTitle, QObject *parent)
+{
+	return new PathConfigVar(section, name, uiName, dialogTitle, false, "", parent);
+}
+
+PathConfigVar* PathConfigVar::newDirListVar(QString section, QString name, QString uiName, QString dialogTitle, QObject *parent)
+{
+	return new PathConfigVar(section, name, uiName, dialogTitle, true, "", parent);
+}
 
 
-PathConfigVar::PathConfigVar(QString section, QString name, QString uiName, QString dialogTitle, QObject *parent)
+PathConfigVar::PathConfigVar(QString section, QString name, QString uiName, QString dialogTitle, bool allowMultipleSelections, QString fileFilter, QObject *parent)
 : ConfigVar(section, name, uiName, true, parent),
-  m_dialogTitle(dialogTitle)
+  m_dialogTitle(dialogTitle),
+  m_allowMultipleSelections(allowMultipleSelections),
+  m_fileFilter(fileFilter)
 {
 	// load path from config
 	m_path = QDir::toNativeSeparators(
@@ -137,8 +152,8 @@ PathConfigVar::PathConfigVar(QString section, QString name, QString uiName, QStr
 
 QWidget* PathConfigVar::implGetWidget(QWidget *parent) const
 {
-	PathConfigWidget *widget = new PathConfigWidget(
-	m_path, m_dialogTitle, parent );
+	PathConfigWidget *widget = new PathConfigWidget( m_path,
+		m_dialogTitle, m_allowMultipleSelections, m_fileFilter, parent );
 	connect( widget, SIGNAL( onPathChanged( const QString& ) ),
 		this, SLOT( onPathChanged( const QString& ) ) );
 	return widget;
@@ -156,9 +171,11 @@ void PathConfigVar::writeToConfig() const
 
 
 
-PathConfigWidget::PathConfigWidget(const QString &defaultPath, const QString &dialogTitle, QWidget *parent)
+PathConfigWidget::PathConfigWidget(const QString &defaultPath, const QString &dialogTitle, bool allowMultipleSelections, QString fileFilter, QWidget *parent)
 : QWidget(parent),
-  m_dialogTitle(dialogTitle)
+  m_dialogTitle(dialogTitle),
+  m_allowMultipleSelections(allowMultipleSelections),
+  m_fileFilter(fileFilter)
 {
 	const int txtLength = 284;
 	const int btnStart = 297;
@@ -166,8 +183,11 @@ PathConfigWidget::PathConfigWidget(const QString &defaultPath, const QString &di
 	m_lineEdit = new QLineEdit(defaultPath, this);
 	m_lineEdit->setGeometry( 10, 20, txtLength, 16);
 
+	// add a button to open a dialog for choosing the path
+	QString pixmapName = allowMultipleSelections ? "add_folder" : "project_open";
+
 	QPushButton *selectBtn = new QPushButton(
-		embed::getIconPixmap( "project_open", 16, 16 ),
+		embed::getIconPixmap( pixmapName.toLatin1().constData(), 16, 16 ),
 		"", this );
 	selectBtn->setFixedSize( 24, 24 );
 	selectBtn->move( btnStart, 16 );
@@ -180,11 +200,37 @@ PathConfigWidget::PathConfigWidget(const QString &defaultPath, const QString &di
 
 void PathConfigWidget::onOpenBtnClicked()
 {
-	QString newPath = FileDialog::getExistingDirectory( this, m_dialogTitle, m_lineEdit->text() );
+	QString newPath;
+	if (m_fileFilter.isEmpty())
+	{
+		// we're choosing a directory
+		newPath = FileDialog::getExistingDirectory( this,
+			m_dialogTitle, m_lineEdit->text() );
+		// add a trailing slash
+		if ( !newPath.isEmpty() && newPath.right(1) != QDir::separator() )
+		{
+			newPath += QDir::separator();
+		}
+	}
+	else
+	{
+		// we're choosing a file
+		newPath = FileDialog::getOpenFileName( this,
+			m_dialogTitle, m_lineEdit->text(), m_fileFilter );
+	}
 	if( newPath != QString::null )
 	{
-		m_lineEdit->setText( newPath );
-		emit onPathChanged( newPath );
+		if ( !m_allowMultipleSelections || m_lineEdit->text().isEmpty() )
+		{
+			// only one path allowed, or no path yet set
+			m_lineEdit->setText( newPath );
+		}
+		else
+		{
+			// append selected path to the current path list
+			m_lineEdit->setText( m_lineEdit->text() + "," + newPath );
+		}
+		emit onPathChanged( m_lineEdit->text() );
 	}
 }
 
@@ -218,19 +264,6 @@ SetupDialog::SetupDialog( ConfigTabs _tab_to_open ) :
 					"framesperaudiobuffer" ).toInt() ),
 	m_lang( ConfigManager::inst()->value( "app",
 							"language" ) ),
-	m_workingDir( QDir::toNativeSeparators( ConfigManager::inst()->workingDir() ) ),
-	m_vstDir( QDir::toNativeSeparators( ConfigManager::inst()->vstDir() ) ),
-	m_artworkDir( QDir::toNativeSeparators( ConfigManager::inst()->artworkDir() ) ),
-	m_flDir( QDir::toNativeSeparators( ConfigManager::inst()->flDir() ) ),
-	m_ladDir( QDir::toNativeSeparators( ConfigManager::inst()->ladspaDir() ) ),
-	m_gigDir( QDir::toNativeSeparators( ConfigManager::inst()->gigDir() ) ),
-	m_sf2Dir( QDir::toNativeSeparators( ConfigManager::inst()->sf2Dir() ) ),
-#ifdef LMMS_HAVE_FLUIDSYNTH
-	m_defaultSoundfont( QDir::toNativeSeparators( ConfigManager::inst()->defaultSoundfont() ) ),
-#endif
-#ifdef LMMS_HAVE_STK
-	m_stkDir( QDir::toNativeSeparators( ConfigManager::inst()->stkDir() ) ),
-#endif
 	m_backgroundArtwork( QDir::toNativeSeparators( ConfigManager::inst()->backgroundArtwork() ) ),
 	m_smoothScroll( ConfigManager::inst()->value( "ui", "smoothscroll" ).toInt() ),
 	m_enableAutoSave( ConfigManager::inst()->value( "ui", "enableautosave" ).toInt() ),
@@ -418,54 +451,37 @@ SetupDialog::SetupDialog( ConfigTabs _tab_to_open ) :
 	const int txtLength = 284;
 	const int btnStart = 297;
 
-	m_pathVars.push_back(new PathConfigVar( "paths", "workingdir", tr( "LMMS working directory").toUpper(),
+	m_pathVars.push_back(PathConfigVar::newDirVar( "paths", "workingdir", tr( "LMMS working directory").toUpper(),
 		tr( "Choose LMMS working directory" ), this ));
-	m_pathVars.push_back(new PathConfigVar( "paths", "gigdir", tr( "GIG directory").toUpper(),
+
+	m_pathVars.push_back(PathConfigVar::newDirVar( "paths", "gigdir", tr( "GIG directory").toUpper(),
 		tr( "Choose your GIG directory" ), this ));
-	//m_pathVars.push_back(new PathConfigVar( "paths", "artwork", tr( "Themes directory").toUpper(),
-	//	tr( "Choose artwork-theme directory" ), this ));
-	//QWidget *lmms_wd_tw = lmms_wd_tw_config->getWidget( pathSelectors );
-	//lmms_wd_tw->setFixedHeight( 48 );
 
-	// working-dir
-	//TabWidget * lmms_wd_tw = new TabWidget( tr(
-	//				"LMMS working directory" ).toUpper(),
-	//							pathSelectors );
-	//lmms_wd_tw->setFixedHeight( 48 );
+	m_pathVars.push_back(PathConfigVar::newDirVar( "paths", "sf2dir", tr( "SF2 Directory").toUpper(),
+		tr( "Choose your SF2 directory" ), this ));
 
-	//m_wdLineEdit = new QLineEdit( m_workingDir, lmms_wd_tw );
-	//m_wdLineEdit->setGeometry( 10, 20, txtLength, 16 );
-	//connect( m_wdLineEdit, SIGNAL( textChanged( const QString & ) ), this,
-	//			SLOT( setWorkingDir( const QString & ) ) );
+	m_pathVars.push_back(PathConfigVar::newDirVar( "paths", "vstdir", tr( "VST-plugin directory").toUpper(),
+		tr( "Choose your VST-plugin directory" ), this ));
 
-	//QPushButton * workingdir_select_btn = new QPushButton(
-	//			embed::getIconPixmap( "project_open", 16, 16 ),
-	//						"", lmms_wd_tw );
-	//workingdir_select_btn->setFixedSize( 24, 24 );
-	//workingdir_select_btn->move( btnStart, 16 );
-	//connect( workingdir_select_btn, SIGNAL( clicked() ), this,
-	//					SLOT( openWorkingDir() ) );
+	m_pathVars.push_back(PathConfigVar::newDirListVar( "paths", "laddir", tr( "LADSPA plugin directory").toUpper(),
+		tr( "Choose LADSPA plugin directory" ), this ));
 
 
-	// artwork-dir
-	TabWidget * artwork_tw = new TabWidget( tr(
-					"Themes directory" ).toUpper(),
-								pathSelectors );
-	artwork_tw->setFixedHeight( 48 );
+#ifdef LMMS_HAVE_STK
+	m_pathVars.push_back(PathConfigVar::newDirVar( "paths", "stkdir", tr( "STK rawwave directory").toUpper(),
+		tr( "Choose STK rawwave directory" ), this ));
+#endif
 
-	m_adLineEdit = new QLineEdit( m_artworkDir, artwork_tw );
-	m_adLineEdit->setGeometry( 10, 20, txtLength, 16 );
-	connect( m_adLineEdit, SIGNAL( textChanged( const QString & ) ), this,
-				SLOT( setArtworkDir( const QString & ) ) );
+#ifdef LMMS_HAVE_FLUIDSYNTH
+	m_pathVars.push_back(PathConfigVar::newFileVar( "paths", "defaultsf2", tr( "Default Soundfont File").toUpper(),
+		tr( "Choose default SoundFont" ), "SoundFont2 Files (*.sf2)", this ));
+#endif
 
-	QPushButton * artworkdir_select_btn = new QPushButton(
-				embed::getIconPixmap( "project_open", 16, 16 ),
-							"", artwork_tw );
-	artworkdir_select_btn->setFixedSize( 24, 24 );
-	artworkdir_select_btn->move( btnStart, 16 );
-	connect( artworkdir_select_btn, SIGNAL( clicked() ), this,
-						SLOT( openArtworkDir() ) );
+	m_pathVars.push_back(PathConfigVar::newDirVar( "paths", "fldir", tr( "FL Studio installation directory").toUpper(),
+		tr( "Choose FL Studio installation directory" ), this ));
 
+	m_pathVars.push_back(PathConfigVar::newDirVar( "paths", "artwork", tr( "Themes directory").toUpper(),
+		tr( "Choose artwork-theme directory" ), this ));
 
 
 	// background artwork file
@@ -489,149 +505,7 @@ SetupDialog::SetupDialog( ConfigTabs _tab_to_open ) :
 
 
 
-
-
-	// FL Studio-dir
-	TabWidget * fl_tw = new TabWidget( tr(
-				"FL Studio installation directory" ).toUpper(),
-								paths );
-	fl_tw->setFixedHeight( 48 );
-
-	m_fdLineEdit = new QLineEdit( m_flDir, fl_tw );
-	m_fdLineEdit->setGeometry( 10, 20, txtLength, 16 );
-	connect( m_fdLineEdit, SIGNAL( textChanged( const QString & ) ), this,
-					SLOT( setFLDir( const QString & ) ) );
-
-	QPushButton * fldir_select_btn = new QPushButton(
-				embed::getIconPixmap( "project_open", 16, 16 ),
-								"", fl_tw );
-	fldir_select_btn->setFixedSize( 24, 24 );
-	fldir_select_btn->move( btnStart, 16 );
-	connect( fldir_select_btn, SIGNAL( clicked() ), this,
-						SLOT( openFLDir() ) );
-
-	// vst-dir
-	TabWidget * vst_tw = new TabWidget( tr(
-					"VST-plugin directory" ).toUpper(),
-								pathSelectors );
-	vst_tw->setFixedHeight( 48 );
-
-	m_vdLineEdit = new QLineEdit( m_vstDir, vst_tw );
-	m_vdLineEdit->setGeometry( 10, 20, txtLength, 16 );
-	connect( m_vdLineEdit, SIGNAL( textChanged( const QString & ) ), this,
-					SLOT( setVSTDir( const QString & ) ) );
-
-	QPushButton * vstdir_select_btn = new QPushButton(
-				embed::getIconPixmap( "project_open", 16, 16 ),
-								"", vst_tw );
-	vstdir_select_btn->setFixedSize( 24, 24 );
-	vstdir_select_btn->move( btnStart, 16 );
-	connect( vstdir_select_btn, SIGNAL( clicked() ), this,
-						SLOT( openVSTDir() ) );
-
-	// gig-dir
-	//TabWidget * gig_tw = new TabWidget( tr(
-	//				"GIG directory" ).toUpper(),
-	//							pathSelectors );
-	//gig_tw->setFixedHeight( 48 );
-
-	//m_gigLineEdit = new QLineEdit( m_gigDir, gig_tw );
-	//m_gigLineEdit->setGeometry( 10, 20, txtLength, 16 );
-	//connect( m_gigLineEdit, SIGNAL( textChanged( const QString & ) ), this,
-	//				SLOT( setGIGDir( const QString & ) ) );
-
-	//QPushButton * gigdir_select_btn = new QPushButton(
-	//			embed::getIconPixmap( "project_open", 16, 16 ),
-	//							"", gig_tw );
-	//gigdir_select_btn->setFixedSize( 24, 24 );
-	//gigdir_select_btn->move( btnStart, 16 );
-	//connect( gigdir_select_btn, SIGNAL( clicked() ), this,
-	//					SLOT( openGIGDir() ) );
-
-	// sf2-dir
-	TabWidget * sf2_tw = new TabWidget( tr(
-					"SF2 directory" ).toUpper(),
-								pathSelectors );
-	sf2_tw->setFixedHeight( 48 );
-
-	m_sf2LineEdit = new QLineEdit( m_sf2Dir, sf2_tw );
-	m_sf2LineEdit->setGeometry( 10, 20, txtLength, 16 );
-	connect( m_sf2LineEdit, SIGNAL( textChanged( const QString & ) ), this,
-					SLOT( setSF2Dir( const QString & ) ) );
-
-	QPushButton * sf2dir_select_btn = new QPushButton(
-				embed::getIconPixmap( "project_open", 16, 16 ),
-								"", sf2_tw );
-	sf2dir_select_btn->setFixedSize( 24, 24 );
-	sf2dir_select_btn->move( btnStart, 16 );
-	connect( sf2dir_select_btn, SIGNAL( clicked() ), this,
-						SLOT( openSF2Dir() ) );
-
-
-
-	// LADSPA-dir
-	TabWidget * lad_tw = new TabWidget( tr(
-			"LADSPA plugin directories" ).toUpper(),
-							paths );
-	lad_tw->setFixedHeight( 48 );
-
-	m_ladLineEdit = new QLineEdit( m_ladDir, lad_tw );
-	m_ladLineEdit->setGeometry( 10, 20, txtLength, 16 );
-	connect( m_ladLineEdit, SIGNAL( textChanged( const QString & ) ), this,
-		 		SLOT( setLADSPADir( const QString & ) ) );
-
-	QPushButton * laddir_select_btn = new QPushButton(
-				embed::getIconPixmap( "add_folder", 16, 16 ),
-								"", lad_tw );
-	laddir_select_btn->setFixedSize( 24, 24 );
-	laddir_select_btn->move( btnStart, 16 );
-	connect( laddir_select_btn, SIGNAL( clicked() ), this,
-				 		SLOT( openLADSPADir() ) );
-
-
-#ifdef LMMS_HAVE_STK
-	// STK-dir
-	TabWidget * stk_tw = new TabWidget( tr(
-			"STK rawwave directory" ).toUpper(),
-							paths );
-	stk_tw->setFixedHeight( 48 );
-
-	m_stkLineEdit = new QLineEdit( m_stkDir, stk_tw );
-	m_stkLineEdit->setGeometry( 10, 20, txtLength, 16 );
-	connect( m_stkLineEdit, SIGNAL( textChanged( const QString & ) ), this,
-		 SLOT( setSTKDir( const QString & ) ) );
-
-	QPushButton * stkdir_select_btn = new QPushButton(
-			embed::getIconPixmap( "project_open", 16, 16 ),
-								"", stk_tw );
-	stkdir_select_btn->setFixedSize( 24, 24 );
-	stkdir_select_btn->move( btnStart, 16 );
-	connect( stkdir_select_btn, SIGNAL( clicked() ), this,
-		 SLOT( openSTKDir() ) );
-#endif
-
-#ifdef LMMS_HAVE_FLUIDSYNTH
-	// Soundfont
-	TabWidget * sf_tw = new TabWidget( tr(
-			"Default Soundfont File" ).toUpper(), paths );
-	sf_tw->setFixedHeight( 48 );
-
-	m_sfLineEdit = new QLineEdit( m_defaultSoundfont, sf_tw );
-	m_sfLineEdit->setGeometry( 10, 20, txtLength, 16 );
-	connect( m_sfLineEdit, SIGNAL( textChanged( const QString & ) ), this,
-		 		SLOT( setDefaultSoundfont( const QString & ) ) );
-
-	QPushButton * sf_select_btn = new QPushButton(
-				embed::getIconPixmap( "project_open", 16, 16 ),
-								"", sf_tw );
-	sf_select_btn->setFixedSize( 24, 24 );
-	sf_select_btn->move( btnStart, 16 );
-	connect( sf_select_btn, SIGNAL( clicked() ), this,
-				 		SLOT( openDefaultSoundfont() ) );
-#endif	
-
-	pathSelectors->setLayout( pathSelectorLayout );
-
+	// add all the path options to the gui
 	for (ConfigVar *var : m_pathVars)
 	{
 		QWidget *widget = var->getWidget( pathSelectors );
@@ -639,27 +513,7 @@ SetupDialog::SetupDialog( ConfigTabs _tab_to_open ) :
 		pathSelectorLayout->addWidget( widget );
 		pathSelectorLayout->addSpacing( 10 );
 	}
-	//pathSelectorLayout->addWidget( lmms_wd_tw );
-	//pathSelectorLayout->addSpacing( 10 );
-	//pathSelectorLayout->addWidget( gig_tw );
-	//pathSelectorLayout->addSpacing( 10 );
-	pathSelectorLayout->addWidget( sf2_tw );
-	pathSelectorLayout->addSpacing( 10 );
-	pathSelectorLayout->addWidget( vst_tw );
-	pathSelectorLayout->addSpacing( 10 );
-	pathSelectorLayout->addWidget( lad_tw );
-#ifdef LMMS_HAVE_STK
-	pathSelectorLayout->addSpacing( 10 );
-	pathSelectorLayout->addWidget( stk_tw );
-#endif	
-#ifdef LMMS_HAVE_FLUIDSYNTH
-	pathSelectorLayout->addSpacing( 10 );
-	pathSelectorLayout->addWidget( sf_tw );
-#endif	
-	pathSelectorLayout->addWidget( fl_tw );
-	pathSelectorLayout->addSpacing( 10 );
-	pathSelectorLayout->addWidget( artwork_tw );
-	pathSelectorLayout->addSpacing( 10 );
+
 	pathSelectorLayout->addStretch();
 	pathSelectorLayout->addWidget( backgroundArtwork_tw );
 	pathSelectorLayout->addSpacing( 10 );
@@ -999,19 +853,12 @@ void SetupDialog::accept()
 	ConfigManager::inst()->setValue( "app", "language", m_lang );
 
 
-	ConfigManager::inst()->setWorkingDir( m_workingDir );
-	ConfigManager::inst()->setVSTDir( m_vstDir );
-	ConfigManager::inst()->setGIGDir( m_gigDir );
-	ConfigManager::inst()->setSF2Dir( m_sf2Dir );
-	ConfigManager::inst()->setArtworkDir( m_artworkDir );
-	ConfigManager::inst()->setFLDir( m_flDir );
-	ConfigManager::inst()->setLADSPADir( m_ladDir );
-#ifdef LMMS_HAVE_FLUIDSYNTH
-	ConfigManager::inst()->setDefaultSoundfont( m_defaultSoundfont );
-#endif
-#ifdef LMMS_HAVE_STK
-	ConfigManager::inst()->setSTKDir( m_stkDir );
-#endif	
+	// save all the path config variables
+	for (const ConfigVar *var : m_pathVars)
+	{
+		var->writeToConfig();
+	}
+
 	ConfigManager::inst()->setBackgroundArtwork( m_backgroundArtwork );
 
 	// tell all audio-settings-widget to save their settings
@@ -1123,174 +970,6 @@ void SetupDialog::setLanguage( int lang )
 }
 
 
-
-
-
-void SetupDialog::openWorkingDir()
-{
-	QString new_dir = FileDialog::getExistingDirectory( this,
-					tr( "Choose LMMS working directory" ), m_workingDir );
-	if( new_dir != QString::null )
-	{
-		m_wdLineEdit->setText( new_dir );
-	}
-}
-
-void SetupDialog::openGIGDir()
-{
-	QString new_dir = FileDialog::getExistingDirectory( this,
-				tr( "Choose your GIG directory" ),
-							m_gigDir );
-	if( new_dir != QString::null )
-	{
-		m_gigLineEdit->setText( new_dir );
-	}
-}
-
-void SetupDialog::openSF2Dir()
-{
-	QString new_dir = FileDialog::getExistingDirectory( this,
-				tr( "Choose your SF2 directory" ),
-							m_sf2Dir );
-	if( new_dir != QString::null )
-	{
-		m_sf2LineEdit->setText( new_dir );
-	}
-}
-
-
-
-
-void SetupDialog::setWorkingDir( const QString & _wd )
-{
-	m_workingDir = _wd;
-}
-
-
-
-
-void SetupDialog::openVSTDir()
-{
-	QString new_dir = FileDialog::getExistingDirectory( this,
-				tr( "Choose your VST-plugin directory" ),
-							m_vstDir );
-	if( new_dir != QString::null )
-	{
-		m_vdLineEdit->setText( new_dir );
-	}
-}
-
-
-
-
-void SetupDialog::setVSTDir( const QString & _vd )
-{
-	m_vstDir = _vd;
-}
-
-void SetupDialog::setGIGDir(const QString &_gd)
-{
-	m_gigDir = _gd;
-}
-
-void SetupDialog::setSF2Dir(const QString &_sfd)
-{
-	m_sf2Dir = _sfd;
-}
-
-
-
-
-void SetupDialog::openArtworkDir()
-{
-	QString new_dir = FileDialog::getExistingDirectory( this,
-				tr( "Choose artwork-theme directory" ),
-							m_artworkDir );
-	if( new_dir != QString::null )
-	{
-		m_adLineEdit->setText( new_dir );
-	}
-}
-
-
-
-
-void SetupDialog::setArtworkDir( const QString & _ad )
-{
-	m_artworkDir = _ad;
-}
-
-
-
-
-void SetupDialog::openFLDir()
-{
-	QString new_dir = FileDialog::getExistingDirectory( this,
-				tr( "Choose FL Studio installation directory" ),
-							m_flDir );
-	if( new_dir != QString::null )
-	{
-		m_fdLineEdit->setText( new_dir );
-	}
-}
-
-
-
-
-void SetupDialog::openLADSPADir()
-{
-	QString new_dir = FileDialog::getExistingDirectory( this,
-				tr( "Choose LADSPA plugin directory" ),
-							m_ladDir );
-	if( new_dir != QString::null )
-	{
-		if( m_ladLineEdit->text() == "" )
-		{
-			m_ladLineEdit->setText( new_dir );
-		}
-		else
-		{
-			m_ladLineEdit->setText( m_ladLineEdit->text() + "," +
-								new_dir );
-		}
-	}
-}
-
-
-
-void SetupDialog::openSTKDir()
-{
-#ifdef LMMS_HAVE_STK
-	QString new_dir = FileDialog::getExistingDirectory( this,
-				tr( "Choose STK rawwave directory" ),
-							m_stkDir );
-	if( new_dir != QString::null )
-	{
-		m_stkLineEdit->setText( new_dir );
-	}
-#endif
-}
-
-
-
-
-void SetupDialog::openDefaultSoundfont()
-{
-#ifdef LMMS_HAVE_FLUIDSYNTH
-	QString new_file = FileDialog::getOpenFileName( this,
-				tr( "Choose default SoundFont" ), m_defaultSoundfont, 
-				"SoundFont2 Files (*.sf2)" );
-	
-	if( new_file != QString::null )
-	{
-		m_sfLineEdit->setText( new_file );
-	}
-#endif
-}
-
-
-
-
 void SetupDialog::openBackgroundArtwork()
 {
 	QList<QByteArray> fileTypesList = QImageReader::supportedImageFormats();
@@ -1307,8 +986,10 @@ void SetupDialog::openBackgroundArtwork()
 		}
 	}
 
+	// Have the file dialog default to the artwork directory
+	// if the background-artwork directory is unset
 	QString dir = ( m_backgroundArtwork.isEmpty() ) ?
-		m_artworkDir :
+		ConfigManager::inst()->value("paths", "artwork") :
 		m_backgroundArtwork;
 	QString new_file = FileDialog::getOpenFileName( this,
 			tr( "Choose background artwork" ), dir, 
@@ -1321,46 +1002,9 @@ void SetupDialog::openBackgroundArtwork()
 }
 
 
-
-
-void SetupDialog::setFLDir( const QString & _fd )
-{
-	m_flDir = _fd;
-}
-
-
-
-
-void SetupDialog::setLADSPADir( const QString & _fd )
-{
-	m_ladDir = _fd;
-}
-
-
-
-
-void SetupDialog::setSTKDir( const QString & _fd )
-{
-#ifdef LMMS_HAVE_STK
-	m_stkDir = _fd;
-#endif
-}
-
-
-
-
-void SetupDialog::setDefaultSoundfont( const QString & _sf )
-{
-#ifdef LMMS_HAVE_FLUIDSYNTH
-	m_defaultSoundfont = _sf;
-#endif
-}
-
-
-
-
 void SetupDialog::setBackgroundArtwork( const QString & _ba )
 {
+	// TODO: Why does background artwork require fluidsynth?
 #ifdef LMMS_HAVE_FLUIDSYNTH
 	m_backgroundArtwork = _ba;
 #endif

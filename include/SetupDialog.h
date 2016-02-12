@@ -74,15 +74,6 @@ private slots:
 	void displayBufSizeHelp();
 
 	// path settings widget
-	void setWorkingDir( const QString & _wd );
-	void setVSTDir( const QString & _vd );
-	void setGIGDir( const QString & _gd );
-	void setSF2Dir( const QString & _sfd );
-	void setArtworkDir( const QString & _ad );
-	void setFLDir( const QString & _fd );
-	void setLADSPADir( const QString & _ld );
-	void setSTKDir( const QString & _sd );
-	void setDefaultSoundfont( const QString & _sf );
 	void setBackgroundArtwork( const QString & _ba );
 
 	// audio settings widget
@@ -94,16 +85,6 @@ private slots:
 	void displayMIDIHelp();
 
 
-
-	void openWorkingDir();
-	void openVSTDir();
-	void openGIGDir();
-	void openSF2Dir();
-	void openArtworkDir();
-	void openFLDir();
-	void openLADSPADir();
-	void openSTKDir();
-	void openDefaultSoundfont();
 	void openBackgroundArtwork();
 
 	void toggleSmoothScroll( bool _enabled );
@@ -129,34 +110,8 @@ private:
 	QStringList m_languages;
 
 
-	QLineEdit * m_wdLineEdit;
-	QLineEdit * m_vdLineEdit;
-	QLineEdit * m_adLineEdit;
-	QLineEdit * m_fdLineEdit;
-	QLineEdit * m_ladLineEdit;
-	QLineEdit * m_gigLineEdit;
-	QLineEdit * m_sf2LineEdit;
-#ifdef LMMS_HAVE_FLUIDSYNTH
-	QLineEdit * m_sfLineEdit;
-#endif
-#ifdef LMMS_HAVE_STK
-	QLineEdit * m_stkLineEdit;
-#endif
 	QLineEdit * m_baLineEdit;
 
-	QString m_workingDir;
-	QString m_vstDir;
-	QString m_artworkDir;
-	QString m_flDir;
-	QString m_ladDir;
-	QString m_gigDir;
-	QString m_sf2Dir;
-#ifdef LMMS_HAVE_FLUIDSYNTH
-	QString m_defaultSoundfont;
-#endif
-#ifdef LMMS_HAVE_STK
-	QString m_stkDir;
-#endif
 	QString m_backgroundArtwork;
 
 	bool m_smoothScroll;
@@ -174,7 +129,6 @@ private:
 	QComboBox * m_midiInterfaces;
 	MswMap m_midiIfaceSetupWidgets;
 	trMap m_midiIfaceNames;
-
 
 } ;
 
@@ -221,8 +175,15 @@ class PathConfigVar : public ConfigVar
 {
 	Q_OBJECT
 	public:
-		PathConfigVar(QString section, QString name, QString uiName, QString dialogTitle, QObject *parent=NULL);
+		PathConfigVar(QString section, QString name, QString uiName, QString dialogTitle, bool allowMultipleSelections=false, QString fileFilter="", QObject *parent=NULL);
 		void writeToConfig() const;
+
+		// new variable that represents a *file*
+		static PathConfigVar* newFileVar(QString section, QString name, QString uiName, QString dialogTitle, QString fileFilter, QObject *parent=NULL);
+		// new variable that represents a single *directory*
+		static PathConfigVar* newDirVar(QString section, QString name, QString uiName, QString dialogTitle, QObject *parent=NULL);
+		// new variable that represents a *list* of directories
+		static PathConfigVar* newDirListVar(QString section, QString name, QString uiName, QString dialogTitle, QObject *parent=NULL);
 	protected:
 		QWidget* implGetWidget(QWidget *parent=NULL) const;
 	private slots:
@@ -231,6 +192,10 @@ class PathConfigVar : public ConfigVar
 		QString m_path;
 		// titlebar text to apply to the FileDialog when choosing a path
 		QString m_dialogTitle;
+		// can the path variable represent *multiple* paths, separated by commas?
+		bool m_allowMultipleSelections;
+		// empty for directory choosing, else describes the valid filetypes
+		QString m_fileFilter;
 };
 
 // implement the gui layout for editing a PathConfigVar
@@ -238,7 +203,7 @@ class PathConfigWidget : public QWidget
 {
 	Q_OBJECT
 	public:
-		PathConfigWidget(const QString &defaultPath, const QString &dialogTitle, QWidget *parent=NULL);
+		PathConfigWidget(const QString &defaultPath, const QString &dialogTitle, bool allowMultipleSelections, QString fileFilter, QWidget *parent=NULL);
 	signals:
 		void onPathChanged(const QString &newPath);
 	private slots:
@@ -249,6 +214,8 @@ class PathConfigWidget : public QWidget
 	private:
 		QString m_dialogTitle;
 		QLineEdit *m_lineEdit;
+		bool m_allowMultipleSelections;
+		QString m_fileFilter;
 		//QPushButton *m_selectBtn;
 };
 
