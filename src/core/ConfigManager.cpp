@@ -299,6 +299,52 @@ void ConfigManager::setValue( const QString & cls,
 				const QString & attribute,
 				const QString & value )
 {
+	// for some reason, we store these values as member variables, so we must
+	// also update those.
+	if (cls == "paths")
+	{
+		if (attribute == "artwork")
+		{
+			m_artworkDir = value;
+		}
+		else if (attribute == "workingdir")
+		{
+			m_workingDir = value;
+		}
+		else if (attribute == "vstdir")
+		{
+			m_vstDir = value;
+		}
+		else if (attribute == "fldir")
+		{
+			m_flDir = value;
+		}
+		else if (attribute == "sf2Dir")
+		{
+			m_sf2Dir = value;
+		}
+		else if (attribute == "laddir")
+		{
+			m_ladDir = value;
+		}
+#ifdef LMMS_HAVE_STK
+		else if (attribute == "stdkdir")
+		{
+			m_stkDir = value;
+		}
+#endif
+#ifdef LMMS_HAVE_FLUIDSYNTH
+		else if (attribute == "defaultsf2")
+		{
+			m_defaultSoundfont = value;
+		}
+#endif
+		else if (attribute == "backgroundartwork")
+		{
+			m_backgroundArtwork = value;
+		}
+	}
+
 	if( m_settings.contains( cls ) )
 	{
 		for( stringPairVector::iterator it = m_settings[cls].begin();
