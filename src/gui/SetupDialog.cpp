@@ -504,6 +504,7 @@ SetupDialog::SetupDialog( ConfigTabs _tab_to_open ) :
 					SLOT( openBackgroundArtwork() ) );
 
 
+	pathSelectors->setLayout( pathSelectorLayout );
 
 	// add all the path options to the gui
 	for (ConfigVar *var : m_pathVars)
