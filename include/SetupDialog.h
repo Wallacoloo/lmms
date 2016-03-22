@@ -122,17 +122,21 @@ class ConfigVar : public QObject
 	public:
 		ConfigVar(QString section, QString name, QString uiName, bool isOwnTab=false, QObject *parent=NULL);
 		QWidget* getWidget(QWidget *parent=NULL) const;
-		virtual void writeToConfig() const = 0;
+		void writeToConfig() const;
 	protected:
 		// the main getWidget method may optionally wrap the actual widget in
 		// a tabview or similar; separate implementation from wrapping
 		virtual QWidget* implGetWidget(QWidget *parent) const = 0;
+		QString curValue() const;
+		void setNewValue(QString newValue);
 		// section/name used to identify the variable in the configuration file
 		QString m_section, m_name;
 		QString m_uiName;
 	private:
 		// Is the ui widget supposed to go in its own TabWidget?
 		bool m_isOwnTab;
+		QString m_value;
+		QString m_newValue;
 };
 
 // boolean configuration variable, i.e. a variable that could be configured with a checkbox
@@ -141,7 +145,6 @@ class BoolConfigVar : public ConfigVar
 	Q_OBJECT
 	public:
 		BoolConfigVar(QString section, QString name, QString uiName, bool inverted=false, QObject *parent=NULL);
-		void writeToConfig() const;
 	protected:
 		QWidget* implGetWidget(QWidget *parent) const;
 	private slots:
@@ -151,7 +154,6 @@ class BoolConfigVar : public ConfigVar
 		// m_inverted is true if the option is stored in the text file in the
 		// *opposite* way in which it's displayed.
 		bool m_inverted;
-		bool m_value;
 };
 
 // string variable that indicates a folder/file path
@@ -170,7 +172,6 @@ class PathConfigVar : public ConfigVar
 		// the dialog will point to some default directory
 		void setDefaultDir( QString dir );
 		void setFileFilter( FileFormat f );
-		void writeToConfig() const;
 
 		// new variable that represents a *file*
 		static PathConfigVar* newFileVar(QString section, QString name, QString uiName, QString dialogTitle, QObject *parent=NULL);
@@ -183,7 +184,6 @@ class PathConfigVar : public ConfigVar
 	private slots:
 		void onPathChanged(const QString &newPath);
 	private:
-		QString m_path;
 		// titlebar text to apply to the FileDialog when choosing a path
 		QString m_dialogTitle;
 		// can the path variable represent *multiple* paths, separated by commas?

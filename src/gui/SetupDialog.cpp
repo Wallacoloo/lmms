@@ -75,8 +75,10 @@ ConfigVar::ConfigVar(QString section, QString name, QString uiName, bool isOwnTa
   m_section(section),
   m_name(name),
   m_uiName(uiName),
-  m_isOwnTab(isOwnTab)
+  m_isOwnTab(isOwnTab),
+  m_value(ConfigManager::inst()->value(section, name))
 {
+	m_newValue = m_value;
 }
 
 QWidget* ConfigVar::getWidget(QWidget *parent) const
@@ -95,32 +97,39 @@ QWidget* ConfigVar::getWidget(QWidget *parent) const
 	}
 }
 
+void ConfigVar::writeToConfig() const
+{
+	ConfigManager::inst()->setValue( m_section, m_name, m_value );
+}
+
+QString ConfigVar::curValue() const
+{
+	return m_value;
+}
+
+void ConfigVar::setNewValue(QString newValue)
+{
+	m_newValue = newValue;
+}
+
 
 BoolConfigVar::BoolConfigVar(QString section, QString name, QString uiName, bool inverted, QObject *parent)
 : ConfigVar(section, name, uiName, false, parent),
   m_inverted(inverted)
 {
-	// read the current value from the configuration file
-	m_value = (ConfigManager::inst()->value(section, name).toInt()
-				!= inverted);
 }
 
 QWidget* BoolConfigVar::implGetWidget(QWidget *parent) const
 {
 	LedCheckBox *box = new LedCheckBox(m_uiName, parent);
-	box->setChecked(m_value);
+	box->setChecked(curValue().toInt() != m_inverted);
 	connect( box, SIGNAL( toggled(bool) ), this, SLOT( onToggle(bool) ) );
 	return box;
-}
-void BoolConfigVar::writeToConfig() const
-{
-	ConfigManager::inst()->setValue( m_section, m_name,
-			QString::number( m_value != m_inverted ) );
 }
 void BoolConfigVar::onToggle(bool newValue)
 {
 	// called whenever the user edits this value through the UI
-	m_value = newValue;
+	setNewValue( QString::number( newValue != m_inverted ) );
 }
 
 
@@ -147,9 +156,6 @@ PathConfigVar::PathConfigVar(QString section, QString name, QString uiName, QStr
   m_fileFilter(fileFilter),
   m_defaultDir(QString::null)
 {
-	// load path from config
-	m_path = QDir::toNativeSeparators(
-		ConfigManager::inst()->value( section, name ) );
 }
 
 void PathConfigVar::setDefaultDir( QString dir )
@@ -164,7 +170,7 @@ void PathConfigVar::setFileFilter( FileFormat f )
 
 QWidget* PathConfigVar::implGetWidget(QWidget *parent) const
 {
-	PathConfigWidget *widget = new PathConfigWidget( m_path, *this, parent);
+	PathConfigWidget *widget = new PathConfigWidget( curValue(), *this, parent);
 	connect( widget, SIGNAL( onPathChanged( const QString& ) ),
 		this, SLOT( onPathChanged( const QString& ) ) );
 	return widget;
@@ -172,12 +178,7 @@ QWidget* PathConfigVar::implGetWidget(QWidget *parent) const
 
 void PathConfigVar::onPathChanged( const QString &newPath )
 {
-	m_path = newPath;
-}
-
-void PathConfigVar::writeToConfig() const
-{
-	ConfigManager::inst()->setValue( m_section, m_name, m_path );
+	setNewValue(newPath);
 }
 
 
