@@ -73,9 +73,6 @@ private slots:
 	void resetBufSize();
 	void displayBufSizeHelp();
 
-	// path settings widget
-	void setBackgroundArtwork( const QString & _ba );
-
 	// audio settings widget
 	void audioInterfaceChanged( const QString & _driver );
 	void displayAudioHelp();
@@ -84,8 +81,6 @@ private slots:
 	void midiInterfaceChanged( const QString & _driver );
 	void displayMIDIHelp();
 
-
-	void openBackgroundArtwork();
 
 	void toggleSmoothScroll( bool _enabled );
 	void toggleAutoSave( bool _enabled );
@@ -111,8 +106,6 @@ private:
 
 
 	QLineEdit * m_baLineEdit;
-
-	QString m_backgroundArtwork;
 
 	bool m_smoothScroll;
 	bool m_enableAutoSave;
@@ -175,11 +168,21 @@ class PathConfigVar : public ConfigVar
 {
 	Q_OBJECT
 	public:
-		PathConfigVar(QString section, QString name, QString uiName, QString dialogTitle, bool allowMultipleSelections=false, QString fileFilter="", QObject *parent=NULL);
+		typedef enum {
+			AnyFormat, // allow selection of any FILE (no directory)
+			DirFormat, // only allow directory selection
+			SF2Format,
+			ImageFormats // allow selection of all images supported by Qt
+		} FileFormat;
+		PathConfigVar(QString section, QString name, QString uiName, QString dialogTitle, bool allowMultipleSelections=false, FileFormat fileFilter=AnyFormat, QObject *parent=NULL);
+		// If the variable blank when the dialog is opened,
+		// the dialog will point to some default directory
+		void setDefaultDir( QString dir );
+		void setFileFilter( FileFormat f );
 		void writeToConfig() const;
 
 		// new variable that represents a *file*
-		static PathConfigVar* newFileVar(QString section, QString name, QString uiName, QString dialogTitle, QString fileFilter, QObject *parent=NULL);
+		static PathConfigVar* newFileVar(QString section, QString name, QString uiName, QString dialogTitle, QObject *parent=NULL);
 		// new variable that represents a single *directory*
 		static PathConfigVar* newDirVar(QString section, QString name, QString uiName, QString dialogTitle, QObject *parent=NULL);
 		// new variable that represents a *list* of directories
@@ -195,7 +198,9 @@ class PathConfigVar : public ConfigVar
 		// can the path variable represent *multiple* paths, separated by commas?
 		bool m_allowMultipleSelections;
 		// empty for directory choosing, else describes the valid filetypes
-		QString m_fileFilter;
+		FileFormat m_fileFilter;
+		QString m_defaultDir;
+	friend class PathConfigWidget;
 };
 
 // implement the gui layout for editing a PathConfigVar
@@ -203,7 +208,7 @@ class PathConfigWidget : public QWidget
 {
 	Q_OBJECT
 	public:
-		PathConfigWidget(const QString &defaultPath, const QString &dialogTitle, bool allowMultipleSelections, QString fileFilter, QWidget *parent=NULL);
+		PathConfigWidget(QString path, const PathConfigVar &pathVar, QWidget *parent=NULL);
 	signals:
 		void onPathChanged(const QString &newPath);
 	private slots:
@@ -212,11 +217,8 @@ class PathConfigWidget : public QWidget
 		// called when user directly enters a path into the text field
 		void onLineEditChanged(const QString &newPath);
 	private:
-		QString m_dialogTitle;
+		const PathConfigVar &m_pathVar;
 		QLineEdit *m_lineEdit;
-		bool m_allowMultipleSelections;
-		QString m_fileFilter;
-		//QPushButton *m_selectBtn;
 };
 
 #endif

@@ -23,6 +23,7 @@
  */
 
 #include <QComboBox>
+#include <QDebug>
 #include <QImageReader>
 #include <QLabel>
 #include <QLayout>
@@ -124,36 +125,46 @@ void BoolConfigVar::onToggle(bool newValue)
 
 
 
-PathConfigVar* PathConfigVar::newFileVar(QString section, QString name, QString uiName, QString dialogTitle, QString fileFilter, QObject *parent)
+PathConfigVar* PathConfigVar::newFileVar(QString section, QString name, QString uiName, QString dialogTitle, QObject *parent)
 {
-	return new PathConfigVar(section, name, uiName, dialogTitle, false, fileFilter, parent);
+	return new PathConfigVar(section, name, uiName, dialogTitle, false, PathConfigVar::AnyFormat, parent);
 }
 PathConfigVar* PathConfigVar::newDirVar(QString section, QString name, QString uiName, QString dialogTitle, QObject *parent)
 {
-	return new PathConfigVar(section, name, uiName, dialogTitle, false, "", parent);
+	return new PathConfigVar(section, name, uiName, dialogTitle, false, PathConfigVar::DirFormat, parent);
 }
 
 PathConfigVar* PathConfigVar::newDirListVar(QString section, QString name, QString uiName, QString dialogTitle, QObject *parent)
 {
-	return new PathConfigVar(section, name, uiName, dialogTitle, true, "", parent);
+	return new PathConfigVar(section, name, uiName, dialogTitle, true, PathConfigVar::DirFormat, parent);
 }
 
 
-PathConfigVar::PathConfigVar(QString section, QString name, QString uiName, QString dialogTitle, bool allowMultipleSelections, QString fileFilter, QObject *parent)
+PathConfigVar::PathConfigVar(QString section, QString name, QString uiName, QString dialogTitle, bool allowMultipleSelections, PathConfigVar::FileFormat fileFilter, QObject *parent)
 : ConfigVar(section, name, uiName, true, parent),
   m_dialogTitle(dialogTitle),
   m_allowMultipleSelections(allowMultipleSelections),
-  m_fileFilter(fileFilter)
+  m_fileFilter(fileFilter),
+  m_defaultDir(QString::null)
 {
 	// load path from config
 	m_path = QDir::toNativeSeparators(
 		ConfigManager::inst()->value( section, name ) );
 }
 
+void PathConfigVar::setDefaultDir( QString dir )
+{
+	m_defaultDir = dir;
+}
+
+void PathConfigVar::setFileFilter( FileFormat f )
+{
+	m_fileFilter = f;
+}
+
 QWidget* PathConfigVar::implGetWidget(QWidget *parent) const
 {
-	PathConfigWidget *widget = new PathConfigWidget( m_path,
-		m_dialogTitle, m_allowMultipleSelections, m_fileFilter, parent );
+	PathConfigWidget *widget = new PathConfigWidget( m_path, *this, parent);
 	connect( widget, SIGNAL( onPathChanged( const QString& ) ),
 		this, SLOT( onPathChanged( const QString& ) ) );
 	return widget;
@@ -171,20 +182,18 @@ void PathConfigVar::writeToConfig() const
 
 
 
-PathConfigWidget::PathConfigWidget(const QString &defaultPath, const QString &dialogTitle, bool allowMultipleSelections, QString fileFilter, QWidget *parent)
+PathConfigWidget::PathConfigWidget(QString path, const PathConfigVar &pathVar, QWidget *parent)
 : QWidget(parent),
-  m_dialogTitle(dialogTitle),
-  m_allowMultipleSelections(allowMultipleSelections),
-  m_fileFilter(fileFilter)
+  m_pathVar(pathVar)
 {
 	const int txtLength = 284;
 	const int btnStart = 297;
 
-	m_lineEdit = new QLineEdit(defaultPath, this);
+	m_lineEdit = new QLineEdit(path, this);
 	m_lineEdit->setGeometry( 10, 20, txtLength, 16);
 
 	// add a button to open a dialog for choosing the path
-	QString pixmapName = allowMultipleSelections ? "add_folder" : "project_open";
+	QString pixmapName = pathVar.m_allowMultipleSelections ? "add_folder" : "project_open";
 
 	QPushButton *selectBtn = new QPushButton(
 		embed::getIconPixmap( pixmapName.toLatin1().constData(), 16, 16 ),
@@ -201,11 +210,16 @@ PathConfigWidget::PathConfigWidget(const QString &defaultPath, const QString &di
 void PathConfigWidget::onOpenBtnClicked()
 {
 	QString newPath;
-	if (m_fileFilter.isEmpty())
+	// the file browser should open to the location of the current item,
+	// or the default directory if no item has been selected
+	QString browsePath = m_lineEdit->text().isEmpty() ?
+		m_pathVar.m_defaultDir : m_lineEdit->text();
+
+	if (m_pathVar.m_fileFilter == PathConfigVar::DirFormat)
 	{
 		// we're choosing a directory
 		newPath = FileDialog::getExistingDirectory( this,
-			m_dialogTitle, m_lineEdit->text() );
+			m_pathVar.m_dialogTitle, browsePath );
 		// add a trailing slash
 		if ( !newPath.isEmpty() && newPath.right(1) != QDir::separator() )
 		{
@@ -215,12 +229,45 @@ void PathConfigWidget::onOpenBtnClicked()
 	else
 	{
 		// we're choosing a file
+		QString filterText = "";
+		switch (m_pathVar.m_fileFilter)
+		{
+			case PathConfigVar::AnyFormat:
+				filterText = "";
+				break;
+			case PathConfigVar::SF2Format:
+				filterText = "SoundFont2 Files (*.sf2)";
+				break;
+			case PathConfigVar::ImageFormats:
+				// Allow user to select any image decodable by QImageReader.
+				{
+					QList<QByteArray> fileTypesList = QImageReader::supportedImageFormats();
+					QString fileTypes;
+					for( int i = 0; i < fileTypesList.count(); i++ )
+					{
+						if( fileTypesList[i] != fileTypesList[i].toUpper() )
+						{
+							if( !fileTypes.isEmpty() )
+							{
+								fileTypes += " ";
+							}
+							fileTypes += "*." + QString( fileTypesList[i] );
+						}
+					}
+					filterText = "Image Files (" + fileTypes + ")";
+				}
+				break;
+			default:
+				// error
+				qDebug() << "SetupDialog.cpp: invalid PathConfigVar::FileFormat type" << m_pathVar.m_fileFilter;
+				break;
+		}
 		newPath = FileDialog::getOpenFileName( this,
-			m_dialogTitle, m_lineEdit->text(), m_fileFilter );
+			m_pathVar.m_dialogTitle, browsePath, filterText );
 	}
 	if( newPath != QString::null )
 	{
-		if ( !m_allowMultipleSelections || m_lineEdit->text().isEmpty() )
+		if ( !m_pathVar.m_allowMultipleSelections || m_lineEdit->text().isEmpty() )
 		{
 			// only one path allowed, or no path yet set
 			m_lineEdit->setText( newPath );
@@ -264,7 +311,6 @@ SetupDialog::SetupDialog( ConfigTabs _tab_to_open ) :
 					"framesperaudiobuffer" ).toInt() ),
 	m_lang( ConfigManager::inst()->value( "app",
 							"language" ) ),
-	m_backgroundArtwork( QDir::toNativeSeparators( ConfigManager::inst()->backgroundArtwork() ) ),
 	m_smoothScroll( ConfigManager::inst()->value( "ui", "smoothscroll" ).toInt() ),
 	m_enableAutoSave( ConfigManager::inst()->value( "ui", "enableautosave" ).toInt() ),
 	m_animateAFP(ConfigManager::inst()->value( "ui",
@@ -448,8 +494,6 @@ SetupDialog::SetupDialog( ConfigTabs _tab_to_open ) :
 	pathScroll->move( 0, 30 );
 	pathSelectors->resize( 360, pathsHeight - 50 );
 
-	const int txtLength = 284;
-	const int btnStart = 297;
 
 	m_pathVars.push_back(PathConfigVar::newDirVar( "paths", "workingdir", tr( "LMMS working directory").toUpper(),
 		tr( "Choose LMMS working directory" ), this ));
@@ -473,8 +517,10 @@ SetupDialog::SetupDialog( ConfigTabs _tab_to_open ) :
 #endif
 
 #ifdef LMMS_HAVE_FLUIDSYNTH
-	m_pathVars.push_back(PathConfigVar::newFileVar( "paths", "defaultsf2", tr( "Default Soundfont File").toUpper(),
-		tr( "Choose default SoundFont" ), "SoundFont2 Files (*.sf2)", this ));
+	PathConfigVar *sf2Config = PathConfigVar::newFileVar( "paths", "defaultsf2", tr( "Default Soundfont File").toUpper(),
+		tr( "Choose default SoundFont" ), this );
+	sf2Config->setFileFilter(PathConfigVar::SF2Format);
+	m_pathVars.push_back(sf2Config);
 #endif
 
 	m_pathVars.push_back(PathConfigVar::newDirVar( "paths", "fldir", tr( "FL Studio installation directory").toUpper(),
@@ -484,25 +530,13 @@ SetupDialog::SetupDialog( ConfigTabs _tab_to_open ) :
 		tr( "Choose artwork-theme directory" ), this ));
 
 
-	// background artwork file
-	TabWidget * backgroundArtwork_tw = new TabWidget( tr(
-			"Background artwork" ).toUpper(), paths );
-	backgroundArtwork_tw->setFixedHeight( 48 );
-
-	m_baLineEdit = new QLineEdit( m_backgroundArtwork, 
-			backgroundArtwork_tw );
-	m_baLineEdit->setGeometry( 10, 20, txtLength, 16 );
-	connect( m_baLineEdit, SIGNAL( textChanged( const QString & ) ), this,
-			SLOT( setBackgroundArtwork( const QString & ) ) );
-
-	QPushButton * backgroundartworkdir_select_btn = new QPushButton(
-			embed::getIconPixmap( "project_open", 16, 16 ),
-			"", backgroundArtwork_tw );
-	backgroundartworkdir_select_btn->setFixedSize( 24, 24 );
-	backgroundartworkdir_select_btn->move( btnStart, 16 );
-	connect( backgroundartworkdir_select_btn, SIGNAL( clicked() ), this,
-					SLOT( openBackgroundArtwork() ) );
-
+	PathConfigVar *bgArtConfig = PathConfigVar::newFileVar( "paths", "backgroundartwork", tr( "Background artwork" ).toUpper(),
+		tr( "Choose background artwork" ), this );
+	bgArtConfig->setFileFilter(PathConfigVar::ImageFormats);
+	// Have the file dialog default to the artwork directory
+	// if the background-artwork directory is unset
+	bgArtConfig->setDefaultDir(ConfigManager::inst()->value("paths", "artwork"));
+	m_pathVars.push_back(bgArtConfig);
 
 	pathSelectors->setLayout( pathSelectorLayout );
 
@@ -514,10 +548,6 @@ SetupDialog::SetupDialog( ConfigTabs _tab_to_open ) :
 		pathSelectorLayout->addWidget( widget );
 		pathSelectorLayout->addSpacing( 10 );
 	}
-
-	pathSelectorLayout->addStretch();
-	pathSelectorLayout->addWidget( backgroundArtwork_tw );
-	pathSelectorLayout->addSpacing( 10 );
 
 	dir_layout->addWidget( pathSelectors );
 
@@ -860,8 +890,6 @@ void SetupDialog::accept()
 		var->writeToConfig();
 	}
 
-	ConfigManager::inst()->setBackgroundArtwork( m_backgroundArtwork );
-
 	// tell all audio-settings-widget to save their settings
 	for( AswMap::iterator it = m_audioIfaceSetupWidgets.begin();
 				it != m_audioIfaceSetupWidgets.end(); ++it )
@@ -969,49 +997,6 @@ void SetupDialog::setLanguage( int lang )
 {
 	m_lang = m_languages[lang];
 }
-
-
-void SetupDialog::openBackgroundArtwork()
-{
-	QList<QByteArray> fileTypesList = QImageReader::supportedImageFormats();
-	QString fileTypes;
-	for( int i = 0; i < fileTypesList.count(); i++ )
-	{
-		if( fileTypesList[i] != fileTypesList[i].toUpper() )
-		{
-			if( !fileTypes.isEmpty() )
-			{
-				fileTypes += " ";
-			}
-			fileTypes += "*." + QString( fileTypesList[i] );
-		}
-	}
-
-	// Have the file dialog default to the artwork directory
-	// if the background-artwork directory is unset
-	QString dir = ( m_backgroundArtwork.isEmpty() ) ?
-		ConfigManager::inst()->value("paths", "artwork") :
-		m_backgroundArtwork;
-	QString new_file = FileDialog::getOpenFileName( this,
-			tr( "Choose background artwork" ), dir, 
-			"Image Files (" + fileTypes + ")" );
-	
-	if( new_file != QString::null )
-	{
-		m_baLineEdit->setText( new_file );
-	}
-}
-
-
-void SetupDialog::setBackgroundArtwork( const QString & _ba )
-{
-	// TODO: Why does background artwork require fluidsynth?
-#ifdef LMMS_HAVE_FLUIDSYNTH
-	m_backgroundArtwork = _ba;
-#endif
-}
-
-
 
 
 void SetupDialog::audioInterfaceChanged( const QString & _iface )
