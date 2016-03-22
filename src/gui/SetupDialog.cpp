@@ -432,24 +432,14 @@ SetupDialog::SetupDialog( ConfigTabs _tab_to_open ) :
 	//If language unset, fallback to system language when available
 	if( m_lang == "" )
 	{
-		QString tmp = QLocale::system().name().left( 2 );
-		if( m_languages.contains( tmp ) )
-		{
-			m_lang = tmp;
-		}
-		else
-		{
-			m_lang = "en";
-		}
+		QString preferredLang = QLocale::system().name().left( 2 );
+		m_lang = m_languages.contains( preferredLang ) ? preferredLang : "en";
 	}
 
-	for( int i = 0; i < changeLang->count(); ++i )
+	// Focus the dropdown at the currently selected language
+	if ( m_languages.contains(m_lang) )
 	{
-		if( m_lang == m_languages.at( i ) )
-		{
-			changeLang->setCurrentIndex( i );
-			break;
-		}
+		changeLang->setCurrentIndex( m_languages.indexOf(m_lang) );
 	}
 
 	gen_layout->addWidget( bufsize_tw );
