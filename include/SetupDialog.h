@@ -81,11 +81,6 @@ private slots:
 	void midiInterfaceChanged( const QString & _driver );
 	void displayMIDIHelp();
 
-
-	void toggleSmoothScroll( bool _enabled );
-	void toggleAutoSave( bool _enabled );
-	void toggleAnimateAFP( bool _enabled );
-
 	void setLanguage( int lang );
 
 
@@ -100,16 +95,12 @@ private:
 	QVector<ConfigVar*> m_miscVars;
 	// all config vars that appear in the paths tab
 	QVector<ConfigVar*> m_pathVars;
+	// all config vars that appear in the Performance Settings tab
+	QVector<ConfigVar*> m_perfVars;
 
 	QString m_lang;
 	QStringList m_languages;
 
-
-	QLineEdit * m_baLineEdit;
-
-	bool m_smoothScroll;
-	bool m_enableAutoSave;
-	bool m_animateAFP;
 
 	typedef QMap<QString, AudioDeviceSetupWidget *> AswMap;
 	typedef QMap<QString, MidiSetupWidget *> MswMap;

@@ -310,11 +310,7 @@ SetupDialog::SetupDialog( ConfigTabs _tab_to_open ) :
 	m_bufferSize( ConfigManager::inst()->value( "mixer",
 					"framesperaudiobuffer" ).toInt() ),
 	m_lang( ConfigManager::inst()->value( "app",
-							"language" ) ),
-	m_smoothScroll( ConfigManager::inst()->value( "ui", "smoothscroll" ).toInt() ),
-	m_enableAutoSave( ConfigManager::inst()->value( "ui", "enableautosave" ).toInt() ),
-	m_animateAFP(ConfigManager::inst()->value( "ui",
-						   "animateafp").toInt() )
+							"language" ) )
 {
 	setWindowIcon( embed::getIconPixmap( "setup_general" ) );
 	setWindowTitle( tr( "Setup LMMS" ) );
@@ -568,31 +564,16 @@ SetupDialog::SetupDialog( ConfigTabs _tab_to_open ) :
 								performance );
 	ui_fx_tw->setFixedHeight( 80 );
 
-	LedCheckBox * smoothScroll = new LedCheckBox(
-			tr( "Smooth scroll in Song Editor" ), ui_fx_tw );
-	smoothScroll->move( 10, 20 );
-	smoothScroll->setChecked( m_smoothScroll );
-	connect( smoothScroll, SIGNAL( toggled( bool ) ),
-				this, SLOT( toggleSmoothScroll( bool ) ) );
+	m_perfVars.push_back(new BoolConfigVar("ui", "smoothscroll", tr( "Smooth scroll in Song Editor" ), false, this));
+	m_perfVars.push_back(new BoolConfigVar("ui", "enableautosave", tr( "Enable auto save feature" ), false, this));
+	m_perfVars.push_back(new BoolConfigVar("ui", "animateafp", tr( "Show playback cursor in AudioFileProcessor" ), false, this));
 
 
-	LedCheckBox * autoSave = new LedCheckBox(
-			tr( "Enable auto save feature" ), ui_fx_tw );
-	autoSave->move( 10, 40 );
-	autoSave->setChecked( m_enableAutoSave );
-	connect( autoSave, SIGNAL( toggled( bool ) ),
-				this, SLOT( toggleAutoSave( bool ) ) );
-
-
-	LedCheckBox * animAFP = new LedCheckBox(
-				tr( "Show playback cursor in AudioFileProcessor" ),
-								ui_fx_tw );
-	animAFP->move( 10, 60 );
-	animAFP->setChecked( m_animateAFP );
-	connect( animAFP, SIGNAL( toggled( bool ) ),
-				this, SLOT( toggleAnimateAFP( bool ) ) );
-
-
+	for (int i=0; i < m_perfVars.size(); ++i)
+	{
+		QWidget *widget = m_perfVars[i]->getWidget( ui_fx_tw );
+		widget->move( 10, 20*(i+1) );
+	}
 
 	perf_layout->addWidget( ui_fx_tw );
 	perf_layout->addStretch();
@@ -875,14 +856,13 @@ void SetupDialog::accept()
 			m_audioIfaceNames[m_audioInterfaces->currentText()] );
 	ConfigManager::inst()->setValue( "mixer", "mididev",
 			m_midiIfaceNames[m_midiInterfaces->currentText()] );
-	ConfigManager::inst()->setValue( "ui", "smoothscroll",
-					QString::number( m_smoothScroll ) );
-	ConfigManager::inst()->setValue( "ui", "enableautosave",
-					QString::number( m_enableAutoSave ) );
-	ConfigManager::inst()->setValue( "ui", "animateafp",
-					QString::number( m_animateAFP ) );
 	ConfigManager::inst()->setValue( "app", "language", m_lang );
 
+	// save all the performance settings
+	for (const ConfigVar *var : m_perfVars)
+	{
+		var->writeToConfig();
+	}
 
 	// save all the path config variables
 	for (const ConfigVar *var : m_pathVars)
@@ -970,26 +950,6 @@ void SetupDialog::displayBufSizeHelp()
 					"especially on older computers or "
 					"systems with a non-realtime "
 					"kernel." ) );
-}
-
-
-void SetupDialog::toggleSmoothScroll( bool _enabled )
-{
-	m_smoothScroll = _enabled;
-}
-
-
-
-void SetupDialog::toggleAutoSave( bool _enabled )
-{
-	m_enableAutoSave = _enabled;
-}
-
-
-
-void SetupDialog::toggleAnimateAFP( bool _enabled )
-{
-	m_animateAFP = _enabled;
 }
 
 
