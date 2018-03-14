@@ -1,5 +1,6 @@
 /*
- * AutomatableModelView.h - class AutomatableModelView
+ * AutomatableModelView.h - provides AutomatableModelView base class,
+ * and provides BoolModelView, FloatModelView, IntModelView subclasses.
  *
  * Copyright (c) 2008-2014 Tobias Doerffel <tobydox/at/users.sourceforge.net>
  *
@@ -123,8 +124,11 @@ public:															\
 }
 
 
+// class FloatModelView defined by the following macro
 generateTypedModelView(Float);
+// class IntModelView defined by the following macro
 generateTypedModelView(Int);
+// class BoolModelView defined by the following macro
 generateTypedModelView(Bool);
 
 
